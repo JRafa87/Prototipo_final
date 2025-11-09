@@ -169,6 +169,30 @@ def main():
         'YearsAtCompany', 'HourlyRate'
     ]
 
-    # Crear una barra
+    # Crear una barra lateral para seleccionar entre las hojas
+    page = st.sidebar.radio("Selecciona una página", ["Simulación por CSV", "Simulación Manual"])
+
+    if page == "Simulación por CSV":
+        # Código para cargar CSV y hacer predicciones (ya implementado en el código anterior)
+        st.header("Cargar Datos desde un Archivo CSV")
+        uploaded_file = st.file_uploader("Sube tu archivo CSV", type=["csv"])
+        if uploaded_file is not None:
+            df = pd.read_csv(uploaded_file)
+            st.write(df.head())  # Muestra los primeros 5 registros del archivo subido
+            
+            # Realiza la predicción y muestra los resultados
+            # Agregar aquí el código que ya tienes para la predicción desde CSV
+            # ...
+
+    elif page == "Simulación Manual":
+        # Función de simulación manual
+        manual_query_and_simulation(df_reference_features, model, categorical_mapping, scaler, model_feature_columns)
+
+# =======================
+# Ejecutar la app
+# =======================
+if __name__ == "__main__":
+    main()
+
 
 

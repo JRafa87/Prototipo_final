@@ -166,11 +166,44 @@ def main():
         'YearsAtCompany', 'HourlyRate'
     ]
 
-    # Llamar a la función de consulta manual y simulación
-    manual_query_and_simulation(df_reference_features, model, categorical_mapping, scaler, model_feature_columns)
+    # Crear una barra de navegación (opciones de pestañas)
+    st.sidebar.header("Menú")
+    app_mode = st.sidebar.radio("Selecciona una opción", ["Cargar archivo CSV", "Simulación manual"])
+
+    if app_mode == "Cargar archivo CSV":
+        st.header("Carga de datos y predicción automática")
+
+        # Subir archivo CSV para predicción automática
+        uploaded_file = st.file_uploader("Sube un archivo CSV o Excel (.csv, .xlsx) para PREDICCIÓN", type=["csv", "xlsx"])
+        
+        if uploaded_file is not None:
+            try:
+                if uploaded_file.name.endswith('.csv'):
+                    df = pd.read_csv(uploaded_file)
+                else:
+                    df = pd.read_excel(uploaded_file)
+
+                # Procesar y hacer predicción para cada fila
+                st.write(df.head())
+                st.markdown("### Predicciones automáticas de deserción")
+                df_processed = preprocess_data(df, model_feature_columns, categorical_mapping, scaler)
+                if df_processed is not None:
+                    prediction_proba = model.predict_proba(df_processed)[:, 1]
+                    df['Probabilidad de Deserción'] = prediction_proba
+                    df['Predicción'] = np.where(prediction_proba > 0.5, "Sí", "No")
+                    st.write(df[['Probabilidad de Deserción', 'Predicción']])
+
+                    # Mostrar gráficos o análisis adicionales si es necesario
+            except Exception as e:
+                st.error(f"Error al procesar el archivo: {e}")
+
+    elif app_mode == "Simulación manual":
+        # Llamar a la función de consulta manual y simulación
+        manual_query_and_simulation(df_reference_features, model, categorical_mapping, scaler, model_feature_columns)
 
 # =======================
 # Iniciar la app
 # =======================
 if __name__ == "__main__":
     main()
+

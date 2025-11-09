@@ -115,7 +115,7 @@ def predict(model, df_processed):
 def main():
     st.set_page_config(page_title="Predicción y Simulación de Renuncia", layout="wide")
     st.title("📊 Modelo de Predicción y Simulación de Renuncia de Empleados")
-    st.markdown("Carga tu archivo de datos o ingresa los datos manualmente para obtener predicciones y simular escenarios.")
+    st.markdown("Elige entre cargar un archivo o ingresar datos manualmente para hacer predicciones y análisis.")
 
     model, categorical_mapping, scaler, df_reference_features, true_labels_reference = load_model()
     if model is None:
@@ -131,11 +131,11 @@ def main():
         'IntencionPermanencia', 'CargaLaboralPercibida', 'SatisfaccionSalarial', 'ConfianzaEmpresa', 'NumeroTardanzas', 
         'NumeroFaltas'
     ]
-    
-    # Opción para cargar archivo CSV o Excel
-    st.header("1. Cargar archivo de datos para predicción")
+
+    # 1. Opción para cargar archivo CSV o Excel
+    st.header("Hoja 1: Cargar archivo para predicción")
     uploaded_file = st.file_uploader("Sube un archivo CSV o Excel (.csv, .xlsx)", type=["csv", "xlsx"])
-    
+
     if uploaded_file is not None:
         try:
             if uploaded_file.name.endswith('.csv'):
@@ -158,46 +158,47 @@ def main():
             return
         
         # Ejecutar predicción con los datos cargados
-        st.header("Resultados de Predicción")
-        if st.button("🚀 Ejecutar Predicción"):
+        if st.button("🚀 Ejecutar Predicción (Cargar archivo)"):
             st.info("Ejecutando el modelo sobre los datos cargados...")
             probabilidad_renuncia, predictions = predict(model, processed_df)
 
             # Unir resultados a la data original
             df['Prediction_Renuncia'] = predictions
             df['Probabilidad_Renuncia'] = probabilidad_renuncia
-            st.success("✅ Predicción y Evaluación de datos cargados Completadas!")
+            st.success("✅ Predicción de datos cargados Completada!")
             st.dataframe(df[['Prediction_Renuncia', 'Probabilidad_Renuncia']])
 
-    # Hoja para ingresar datos manuales
-    st.header("2. Ingresar datos manuales para predicción")
+    # 2. Hoja para ingresar datos manuales
+    st.header("Hoja 2: Ingresar datos manualmente para predicción")
+    with st.form("manual_form"):
+        manual_data = {}
+        for col in model_feature_columns:
+            if col == 'Edad':
+                manual_data[col] = st.number_input(f"{col}", min_value=18, max_value=100, value=30)
+            elif col == 'IngresoMensual':
+                manual_data[col] = st.number_input(f"{col}", min_value=0, max_value=100000, value=30000)
+            else:
+                manual_data[col] = st.text_input(f"{col}")
 
-    # Crear campos de entrada para el usuario en español
-    manual_data = {}
-    for col in model_feature_columns:
-        if col == 'Edad':
-            manual_data[col] = st.number_input(f"{col}", min_value=18, max_value=100, value=30)
-        elif col == 'IngresoMensual':
-            manual_data[col] = st.number_input(f"{col}", min_value=0, max_value=100000, value=3000)
-        else:
-            manual_data[col] = st.text_input(f"{col}")
+        submit_button = st.form_submit_button("🚀 Predecir (Ingresar manualmente)")
 
-    # Convertir los datos manuales en un DataFrame para preprocesamiento
-    if st.button("🚀 Predecir"):
-        df_manual = pd.DataFrame([manual_data])
-        processed_manual_data = preprocess_data(df_manual, model_feature_columns, categorical_mapping, scaler)
-        
-        if processed_manual_data is not None:
-            probabilidad_renuncia, predictions = predict(model, processed_manual_data)
-            st.success("✅ Predicción Manual Completa!")
-            st.write(f"Probabilidad de renuncia: {probabilidad_renuncia[0]:.2f}")
-            st.write(f"Predicción: {'Renunciará' if predictions[0] == 1 else 'No Renunciará'}")
-        else:
-            st.error("Error en el preprocesamiento de los datos manuales.")
+        if submit_button:
+            # Convertir los datos manuales en un DataFrame para preprocesamiento
+            df_manual = pd.DataFrame([manual_data])
+            processed_manual_data = preprocess_data(df_manual, model_feature_columns, categorical_mapping, scaler)
+
+            if processed_manual_data is not None:
+                probabilidad_renuncia, predictions = predict(model, processed_manual_data)
+                st.success("✅ Predicción Manual Completa!")
+                st.write(f"Probabilidad de renuncia: {probabilidad_renuncia[0]:.2f}")
+                st.write(f"Predicción: {'Renunciará' if predictions[0] == 1 else 'No Renunciará'}")
+            else:
+                st.error("Error en el preprocesamiento de los datos manuales.")
 
 
 if __name__ == "__main__":
     main()
+
 
 
 

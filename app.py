@@ -74,7 +74,7 @@ def preprocess_data(df, model_columns, categorical_mapping, scaler):
     return df_processed[model_columns]
 
 # =======================
-# Mostrar riesgo de deserción
+# Visualizar riesgo de deserción
 # =======================
 def plot_risk_circular(probabilidad_renuncia):
     fig, ax = plt.subplots(figsize=(5,5))
@@ -86,75 +86,65 @@ def plot_risk_circular(probabilidad_renuncia):
     st.pyplot(fig)
 
 # =======================
-# Simulación de escenarios
+# Simulación y predicción
 # =======================
-def simulate_scenario(df_features, model, categorical_mapping, scaler, model_feature_columns):
-    # Preprocesar la data ingresada
-    processed_data = preprocess_data(df_features, model_feature_columns, categorical_mapping, scaler)
+def make_predictions(df, model, categorical_mapping, scaler, model_feature_columns):
+    df_processed = preprocess_data(df, model_feature_columns, categorical_mapping, scaler)
 
-    if processed_data is not None:
-        # Ejecutar la predicción
-        probabilidad_renuncia = model.predict_proba(processed_data)[:, 1]
-        prediction = 'Sí' if probabilidad_renuncia > 0.5 else 'No'
-        return probabilidad_renuncia, prediction
-    return None, None
+    if df_processed is not None:
+        # Predicción
+        probabilidad_renuncia = model.predict_proba(df_processed)[:, 1]
+        predictions = (probabilidad_renuncia > 0.5).astype(int)
+        
+        # Añadir las predicciones al DataFrame original
+        df['Prediction_Renuncia'] = predictions
+        df['Probabilidad_Renuncia'] = probabilidad_renuncia
 
-# =======================
-# Función principal de la interfaz
-# =======================
-def manual_query_and_simulation(df_reference_features, model, categorical_mapping, scaler, model_feature_columns):
-    st.header("Consulta Manual de Deserción y Simulación de Escenarios")
-
-    st.markdown("### Ingresa las variables del empleado o grupo en español:")
-
-    # Crear un formulario de entrada para el empleado
-    with st.form(key="manual_input_form"):
-        # Variables en un diseño de formulario más visual
-        col1, col2 = st.columns(2)
-        with col1:
-            edad = st.number_input("Edad", min_value=18, max_value=100, value=30, step=1)
-            ingresos_mensuales = st.number_input("Ingreso mensual", min_value=1000, max_value=20000, value=5000, step=100)
-            nivel_satisfaccion_trabajo = st.slider("Satisfacción en el trabajo", min_value=1, max_value=4, value=3)
-            salario_hora = st.number_input("Salario por hora", min_value=10, max_value=100, value=25, step=1)
-
-        with col2:
-            viaje_negocios = st.selectbox("Viajes de negocio", options=["No", "Viaja", "Frecuente"])
-            departamento = st.selectbox("Departamento", options=["Ventas", "TI", "Recursos Humanos", "Marketing", "Operaciones"])
-            años_en_empresa = st.number_input("Años en la empresa", min_value=0, max_value=50, value=5, step=1)
-            horas_trabajadas = st.number_input("Horas trabajadas a la semana", min_value=30, max_value=80, value=40, step=1)
-
-        submit_button = st.form_submit_button(label="Simular Escenario")
-
-    if submit_button:
-        # Crear un DataFrame para las variables ingresadas
-        input_data = pd.DataFrame({
-            "Age": [edad],
-            "BusinessTravel": [viaje_negocios],
-            "Department": [departamento],
-            "MonthlyIncome": [ingresos_mensuales],
-            "JobSatisfaction": [nivel_satisfaccion_trabajo],
-            "YearsAtCompany": [años_en_empresa],
-            "HourlyRate": [salario_hora],
-        })
-
-        # Predecir el riesgo de deserción con el modelo
-        probabilidad_renuncia, prediction = simulate_scenario(input_data, model, categorical_mapping, scaler, model_feature_columns)
-
-        if probabilidad_renuncia is not None:
-            st.markdown(f"**Probabilidad de deserción:** {probabilidad_renuncia * 100:.2f}%")
-            st.markdown(f"**Predicción de deserción:** {prediction}")
-
-            # Mostrar gráfico circular del riesgo
-            plot_risk_circular(probabilidad_renuncia)
-
-            # Recomendaciones basadas en la predicción
-            if probabilidad_renuncia > 0.5:
-                st.warning("¡Este empleado tiene un alto riesgo de deserción! Recomendamos intervenir pronto.")
-            else:
-                st.success("Este empleado tiene un bajo riesgo de deserción.")
+        return df
+    return None
 
 # =======================
-# Función principal de la app
+# Función para ingresar manualmente las variables
+# =======================
+def simulate_scenario(model, categorical_mapping, scaler, model_feature_columns):
+    st.write("### Simulación Manual de Escenario")
+
+    # Crear campos para ingresar las variables manualmente
+    edad = st.number_input("Edad", min_value=18, max_value=100, value=30)
+    ingreso_mensual = st.number_input("Ingreso Mensual", min_value=1000, max_value=20000, value=3000)
+    satisfaccion_laboral = st.slider("Satisfacción Laboral", min_value=1, max_value=4, value=3)
+    años_en_empresa = st.number_input("Años en la Empresa", min_value=0, max_value=50, value=5)
+
+    # Crear un dataframe con estas variables
+    input_data = {
+        'Age': [edad],
+        'MonthlyIncome': [ingreso_mensual],
+        'JobSatisfaction': [satisfaccion_laboral],
+        'YearsAtCompany': [años_en_empresa],
+    }
+
+    input_df = pd.DataFrame(input_data)
+
+    # Preprocesar el dataframe y hacer la predicción
+    result_df = make_predictions(input_df, model, categorical_mapping, scaler, model_feature_columns)
+
+    if result_df is not None:
+        st.write("### Resultados de la Predicción Manual")
+        st.write(result_df[['Age', 'MonthlyIncome', 'JobSatisfaction', 'YearsAtCompany', 'Prediction_Renuncia', 'Probabilidad_Renuncia']])
+        
+        # Mostrar gráfico de riesgo
+        st.write("Gráfico de riesgo de deserción")
+        plot_risk_circular(result_df['Probabilidad_Renuncia'][0])
+
+        # Recomendaciones
+        st.write("### Recomendaciones:")
+        if result_df['Probabilidad_Renuncia'][0] > 0.7:
+            st.markdown("**Recomendación:** Priorizar intervención, realizar entrevistas de retención, ofrecer soluciones personalizadas.")
+        else:
+            st.markdown("**Recomendación:** Continuar con las políticas actuales, monitorear periódicamente su satisfacción.")
+
+# =======================
+# Función principal
 # =======================
 def main():
     st.set_page_config(page_title="Simulador de Deserción de Empleados", layout="wide")
@@ -162,37 +152,58 @@ def main():
 
     model, categorical_mapping, scaler, df_reference_features, true_labels_reference = load_model()
     if model is None:
-        return 
+        return
 
+    # Definir las columnas del modelo
     model_feature_columns = [
         'Age', 'BusinessTravel', 'Department', 'MonthlyIncome', 'JobSatisfaction', 
-        'YearsAtCompany', 'HourlyRate'
+        'YearsAtCompany', 'HourlyRate', 'DistanceFromHome', 'Education', 'Gender',
+        'JobRole', 'MaritalStatus', 'OverTime'
     ]
 
-    # Crear una barra lateral para seleccionar entre las hojas
-    page = st.sidebar.radio("Selecciona una página", ["Simulación por CSV", "Simulación Manual"])
+    # Crear un menú de selección de pestañas
+    page = st.radio("Selecciona una opción", ["Predicción con archivo CSV", "Simulación Manual de Escenario"])
 
-    if page == "Simulación por CSV":
-        # Código para cargar CSV y hacer predicciones (ya implementado en el código anterior)
-        st.header("Cargar Datos desde un Archivo CSV")
+    if page == "Predicción con archivo CSV":
+        # Cargar el archivo CSV
         uploaded_file = st.file_uploader("Sube tu archivo CSV", type=["csv"])
         if uploaded_file is not None:
             df = pd.read_csv(uploaded_file)
             st.write(df.head())  # Muestra los primeros 5 registros del archivo subido
-            
-            # Realiza la predicción y muestra los resultados
-            # Agregar aquí el código que ya tienes para la predicción desde CSV
-            # ...
 
-    elif page == "Simulación Manual":
-        # Función de simulación manual
-        manual_query_and_simulation(df_reference_features, model, categorical_mapping, scaler, model_feature_columns)
+            if st.button("Realizar Predicciones"):
+                # Realizar la predicción
+                result_df = make_predictions(df, model, categorical_mapping, scaler, model_feature_columns)
+
+                if result_df is not None:
+                    # Mostrar resultados
+                    st.write("Resultados de las predicciones")
+                    st.write(result_df[['EmployeeNumber', 'Prediction_Renuncia', 'Probabilidad_Renuncia']])
+
+                    # Mostrar gráfico de riesgo
+                    st.write("Gráfico de riesgo de deserción")
+                    for index, row in result_df.iterrows():
+                        plot_risk_circular(row['Probabilidad_Renuncia'])
+
+                    # Recomendaciones
+                    st.write("### Recomendaciones:")
+                    for index, row in result_df.iterrows():
+                        if row['Probabilidad_Renuncia'] > 0.7:
+                            st.write(f"Empleado {row['EmployeeNumber']} con alta probabilidad de deserción ({row['Probabilidad_Renuncia']*100:.2f}%)")
+                            st.markdown("**Recomendación:** Priorizar intervención, realizar entrevistas de retención, ofrecer soluciones personalizadas.")
+                        else:
+                            st.write(f"Empleado {row['EmployeeNumber']} con baja probabilidad de deserción ({row['Probabilidad_Renuncia']*100:.2f}%)")
+                            st.markdown("**Recomendación:** Continuar con las políticas actuales, monitorear periódicamente su satisfacción.")
+
+    elif page == "Simulación Manual de Escenario":
+        simulate_scenario(model, categorical_mapping, scaler, model_feature_columns)
 
 # =======================
 # Ejecutar la app
 # =======================
 if __name__ == "__main__":
     main()
+
 
 
 

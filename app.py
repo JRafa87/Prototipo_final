@@ -28,7 +28,6 @@ def load_model():
             st.error("Error: La data de referencia debe contener la columna 'Attrition' para la evaluación.")
             return None, None, None, None
 
-        # Solución al error 'invalid literal for int(): 'Yes''
         df_reference['Attrition'] = df_reference['Attrition'].replace({'Yes': 1, 'No': 0})
 
         true_labels_reference = df_reference['Attrition'].astype(int).copy()
@@ -110,15 +109,19 @@ def manual_query_and_simulation(df_reference_features, model, categorical_mappin
 
     # Crear un formulario de entrada para el empleado
     with st.form(key="manual_input_form"):
-        # Ingresar las variables del empleado
-        edad = st.number_input("Edad", min_value=18, max_value=100, value=30)
-        viaje_negocios = st.selectbox("Viajes de negocio", options=["No", "Viaja", "Frecuente"])
-        departamento = st.selectbox("Departamento", options=["Ventas", "TI", "Recursos Humanos", "Marketing", "Operaciones"])
-        ingresos_mensuales = st.number_input("Ingreso mensual", min_value=1000, max_value=20000, value=5000)
-        nivel_satisfaccion_trabajo = st.slider("Satisfacción en el trabajo", min_value=1, max_value=4, value=3)
-        años_en_empresa = st.number_input("Años en la empresa", min_value=0, max_value=50, value=5)
-        horas_trabajadas = st.number_input("Horas trabajadas a la semana", min_value=30, max_value=80, value=40)
-        salario_hora = st.number_input("Salario por hora", min_value=10, max_value=100, value=25)
+        # Variables en un diseño de formulario más visual
+        col1, col2 = st.columns(2)
+        with col1:
+            edad = st.number_input("Edad", min_value=18, max_value=100, value=30, step=1)
+            ingresos_mensuales = st.number_input("Ingreso mensual", min_value=1000, max_value=20000, value=5000, step=100)
+            nivel_satisfaccion_trabajo = st.slider("Satisfacción en el trabajo", min_value=1, max_value=4, value=3)
+            salario_hora = st.number_input("Salario por hora", min_value=10, max_value=100, value=25, step=1)
+
+        with col2:
+            viaje_negocios = st.selectbox("Viajes de negocio", options=["No", "Viaja", "Frecuente"])
+            departamento = st.selectbox("Departamento", options=["Ventas", "TI", "Recursos Humanos", "Marketing", "Operaciones"])
+            años_en_empresa = st.number_input("Años en la empresa", min_value=0, max_value=50, value=5, step=1)
+            horas_trabajadas = st.number_input("Horas trabajadas a la semana", min_value=30, max_value=80, value=40, step=1)
 
         submit_button = st.form_submit_button(label="Simular Escenario")
 
@@ -166,44 +169,6 @@ def main():
         'YearsAtCompany', 'HourlyRate'
     ]
 
-    # Crear una barra de navegación (opciones de pestañas)
-    st.sidebar.header("Menú")
-    app_mode = st.sidebar.radio("Selecciona una opción", ["Cargar archivo CSV", "Simulación manual"])
+    # Crear una barra
 
-    if app_mode == "Cargar archivo CSV":
-        st.header("Carga de datos y predicción automática")
-
-        # Subir archivo CSV para predicción automática
-        uploaded_file = st.file_uploader("Sube un archivo CSV o Excel (.csv, .xlsx) para PREDICCIÓN", type=["csv", "xlsx"])
-        
-        if uploaded_file is not None:
-            try:
-                if uploaded_file.name.endswith('.csv'):
-                    df = pd.read_csv(uploaded_file)
-                else:
-                    df = pd.read_excel(uploaded_file)
-
-                # Procesar y hacer predicción para cada fila
-                st.write(df.head())
-                st.markdown("### Predicciones automáticas de deserción")
-                df_processed = preprocess_data(df, model_feature_columns, categorical_mapping, scaler)
-                if df_processed is not None:
-                    prediction_proba = model.predict_proba(df_processed)[:, 1]
-                    df['Probabilidad de Deserción'] = prediction_proba
-                    df['Predicción'] = np.where(prediction_proba > 0.5, "Sí", "No")
-                    st.write(df[['Probabilidad de Deserción', 'Predicción']])
-
-                    # Mostrar gráficos o análisis adicionales si es necesario
-            except Exception as e:
-                st.error(f"Error al procesar el archivo: {e}")
-
-    elif app_mode == "Simulación manual":
-        # Llamar a la función de consulta manual y simulación
-        manual_query_and_simulation(df_reference_features, model, categorical_mapping, scaler, model_feature_columns)
-
-# =======================
-# Iniciar la app
-# =======================
-if __name__ == "__main__":
-    main()
 

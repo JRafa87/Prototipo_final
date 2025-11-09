@@ -115,7 +115,7 @@ def predict(model, df_processed):
 def main():
     st.set_page_config(page_title="Predicción y Simulación de Renuncia", layout="wide")
     st.title("📊 Modelo de Predicción y Simulación de Renuncia de Empleados")
-    st.markdown("Carga tu archivo de datos para obtener predicciones o ingresa manualmente los datos para simular escenarios.")
+    st.markdown("Carga tu archivo de datos o ingresa los datos manualmente para obtener predicciones y simular escenarios.")
 
     model, categorical_mapping, scaler, df_reference_features, true_labels_reference = load_model()
     if model is None:
@@ -123,19 +123,18 @@ def main():
 
     # Columnas que debe tener el dataset cargado
     model_feature_columns = [
-        'Age', 'BusinessTravel', 'DailyRate', 'Department', 'DistanceFromHome', 'Education', 'EducationField', 
-        'EnvironmentSatisfaction', 'Gender', 'HourlyRate', 'JobInvolvement', 'JobLevel', 'JobRole', 'JobSatisfaction', 
-        'MaritalStatus', 'MonthlyIncome', 'MonthlyRate', 'NumCompaniesWorked', 'OverTime', 'PercentSalaryHike', 
-        'PerformanceRating', 'RelationshipSatisfaction', 'StockOptionLevel', 'TotalWorkingYears', 'TrainingTimesLastYear', 
-        'WorkLifeBalance', 'YearsAtCompany', 'YearsInCurrentRole', 'YearsSinceLastPromotion', 'YearsWithCurrManager', 
+        'Edad', 'ViajeDeNegocios', 'TarifaDiaria', 'Departamento', 'DistanciaDeCasa', 'Educacion', 'CampoEducacion', 
+        'SatisfaccionAmbiente', 'Genero', 'TarifaHora', 'InvolucramientoTrabajo', 'NivelTrabajo', 'RolTrabajo', 'SatisfaccionTrabajo', 
+        'EstadoCivil', 'IngresoMensual', 'TasaMensual', 'NumEmpresasTrabajadas', 'TiempoExtra', 'IncrementoSalarial', 
+        'RendimientoTrabajo', 'SatisfaccionRelaciones', 'NivelOpcionesAcciones', 'TotalAñosTrabajados', 'TiempoEntrenamiento', 
+        'EquilibrioTrabajoVida', 'AñosEnEmpresa', 'AñosEnRolActual', 'AñosUltimaPromocion', 'AñosConGerenteActual', 
         'IntencionPermanencia', 'CargaLaboralPercibida', 'SatisfaccionSalarial', 'ConfianzaEmpresa', 'NumeroTardanzas', 
         'NumeroFaltas'
     ]
     
-    # ---------------------------------------
-    # Opción de cargar archivo CSV o Excel
-    # ---------------------------------------
-    uploaded_file = st.file_uploader("Sube un archivo CSV o Excel (.csv, .xlsx) para PREDICCIÓN", type=["csv", "xlsx"])
+    # Opción para cargar archivo CSV o Excel
+    st.header("1. Cargar archivo de datos para predicción")
+    uploaded_file = st.file_uploader("Sube un archivo CSV o Excel (.csv, .xlsx)", type=["csv", "xlsx"])
     
     if uploaded_file is not None:
         try:
@@ -159,8 +158,8 @@ def main():
             return
         
         # Ejecutar predicción con los datos cargados
-        st.header("1. Predicción con Datos Cargados")
-        if st.button("🚀 Ejecutar Predicción y Evaluación"):
+        st.header("Resultados de Predicción")
+        if st.button("🚀 Ejecutar Predicción"):
             st.info("Ejecutando el modelo sobre los datos cargados...")
             probabilidad_renuncia, predictions = predict(model, processed_df)
 
@@ -170,27 +169,24 @@ def main():
             st.success("✅ Predicción y Evaluación de datos cargados Completadas!")
             st.dataframe(df[['Prediction_Renuncia', 'Probabilidad_Renuncia']])
 
-    # ---------------------------------------
-    # Ingreso manual de datos
-    # ---------------------------------------
-    st.subheader("2. Ingreso Manual de Datos para Predicción")
-    
-    # Crear campos de entrada para el usuario
+    # Hoja para ingresar datos manuales
+    st.header("2. Ingresar datos manuales para predicción")
+
+    # Crear campos de entrada para el usuario en español
     manual_data = {}
     for col in model_feature_columns:
-        if col == 'Age':
+        if col == 'Edad':
             manual_data[col] = st.number_input(f"{col}", min_value=18, max_value=100, value=30)
-        elif col == 'MonthlyIncome':
-            manual_data[col] = st.number_input(f"{col}", min_value=0, max_value=100000, value=30000)
-        elif col == 'Gender':
-            manual_data[col] = st.selectbox(f"{col}", options=['Male', 'Female'])
+        elif col == 'IngresoMensual':
+            manual_data[col] = st.number_input(f"{col}", min_value=0, max_value=100000, value=3000)
         else:
             manual_data[col] = st.text_input(f"{col}")
-    
-    if st.button("🚀 Predecir Manualmente"):
+
+    # Convertir los datos manuales en un DataFrame para preprocesamiento
+    if st.button("🚀 Predecir"):
         df_manual = pd.DataFrame([manual_data])
         processed_manual_data = preprocess_data(df_manual, model_feature_columns, categorical_mapping, scaler)
-
+        
         if processed_manual_data is not None:
             probabilidad_renuncia, predictions = predict(model, processed_manual_data)
             st.success("✅ Predicción Manual Completa!")
@@ -202,6 +198,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 

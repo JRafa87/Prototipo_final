@@ -4,30 +4,34 @@ import joblib
 import streamlit as st
 import os
 from sklearn.preprocessing import MinMaxScaler
+from sklearn.metrics import accuracy_score, f1_score
 import matplotlib.pyplot as plt
 
-# =======================
-# Funciones de carga
-# =======================
+# ==========================
+# 1. Cargar Modelos y Artefactos
+# ==========================
 @st.cache_resource
 def load_model():
     try:
         # Cargar modelos y artefactos
         model = joblib.load('models/xgboost_model.pkl')
         categorical_mapping = joblib.load('models/categorical_mapping.pkl')  # Cargar el diccionario de codificación
+
+        # Aseguramos que el scaler es el objeto correcto (MinMaxScaler o similar)
         scaler = joblib.load('models/scaler.pkl')
 
         REFERENCE_DATA_PATH = 'data/reference_data.csv'
         if not os.path.exists(REFERENCE_DATA_PATH):
             st.error(f"Error: No se encontró la data de referencia en '{REFERENCE_DATA_PATH}'. Necesaria para evaluación de simulaciones.")
-            return None, None, None, None
+            return None, None, None, None, None
 
         df_reference = pd.read_csv(REFERENCE_DATA_PATH)
 
         if 'Attrition' not in df_reference.columns:
             st.error("Error: La data de referencia debe contener la columna 'Attrition' para la evaluación.")
-            return None, None, None, None
+            return None, None, None, None, None
 
+        # Solución al error 'invalid literal for int(): 'Yes''
         df_reference['Attrition'] = df_reference['Attrition'].replace({'Yes': 1, 'No': 0})
 
         true_labels_reference = df_reference['Attrition'].astype(int).copy()
@@ -37,20 +41,29 @@ def load_model():
         return model, categorical_mapping, scaler, df_reference_features, true_labels_reference
 
     except FileNotFoundError:
-        st.error("Error: Archivos del modelo no encontrados.")
-        return None, None, None, None
+        st.error("Error: Archivos del modelo (xgboost_model.pkl, categorical_mapping.pkl, scaler.pkl) no encontrados. Asegúrate de tener la carpeta 'models' con los 3 archivos.")
+        return None, None, None, None, None
     except Exception as e:
         st.error(f"Error al cargar artefactos o data de referencia: {e}")
-        return None, None, None, None
+        return None, None, None, None, None
 
-# =======================
-# Preprocesamiento de datos
-# =======================
+
+# ================================
+# 2. Funciones de Preprocesamiento
+# ================================
 def preprocess_data(df, model_columns, categorical_mapping, scaler):
     df_processed = df.copy()
 
+    # Verificar si faltan columnas y agregarlas
+    for col in model_columns:
+        if col not in df_processed.columns:
+            df_processed[col] = np.nan  # Agregar columnas faltantes con NaN
+
     # Rellenar nulos y codificar
+    df_processed = df_processed.drop_duplicates()
     numeric_cols_for_fillna = df_processed.select_dtypes(include=np.number).columns.tolist()
+    
+    # Solo rellenamos las columnas numéricas que están en model_columns
     cols_to_fill = list(set(numeric_cols_for_fillna) & set(model_columns))
     df_processed[cols_to_fill] = df_processed[cols_to_fill].fillna(df_processed[cols_to_fill].mean())
 
@@ -59,150 +72,137 @@ def preprocess_data(df, model_columns, categorical_mapping, scaler):
     for col in nominal_categorical_cols:
         if col in df_processed.columns:
             df_processed[col] = df_processed[col].astype(str).str.strip().str.upper()
+
             if col in categorical_mapping:
+                # Mapeo de valores conocidos
                 df_processed[col] = df_processed[col].map(categorical_mapping[col])
+
+            # Rellenar valores desconocidos (si los hay) con el valor de 'DESCONOCIDO' o -1
             df_processed[col] = df_processed[col].fillna(categorical_mapping.get(col, {}).get('DESCONOCIDO', -1))
         
+    # --- Ordenar y seleccionar solo las columnas de FEATURES ANTES DE ESCALAR ---
+    df_to_scale = df_processed[model_columns].copy()
+    
     # Escalado
     try:
-        df_to_scale = df_processed[model_columns].copy()
+        # El scaler espera solo las columnas de las features
         df_processed[model_columns] = scaler.transform(df_to_scale)
     except Exception as e:
-        st.error(f"Error al escalar los datos: {e}.")
+        st.error(f"Error al escalar los datos: {e}. ¿El scaler fue entrenado correctamente con la forma de la data?")
         return None
 
+    # Finalmente, devolver el DataFrame solo con las columnas que el modelo espera y en el orden correcto
     return df_processed[model_columns]
 
-# =======================
-# Visualizar riesgo de deserción
-# =======================
-def plot_risk_circular(probabilidad_renuncia):
-    fig, ax = plt.subplots(figsize=(5,5))
-    labels = ['Deserción Baja', 'Deserción Alta']
-    sizes = [100 - probabilidad_renuncia * 100, probabilidad_renuncia * 100]
-    colors = ['green', 'red']
-    ax.pie(sizes, labels=labels, colors=colors, autopct='%1.1f%%', startangle=90)
-    ax.axis('equal')  # Equal aspect ratio ensures that pie is drawn as a circle.
-    st.pyplot(fig)
 
-# =======================
-# Simulación y predicción
-# =======================
-def make_predictions(df, model, categorical_mapping, scaler, model_feature_columns):
-    df_processed = preprocess_data(df, model_feature_columns, categorical_mapping, scaler)
-
-    if df_processed is not None:
-        # Predicción
+# ============================
+# Función para la Predicción
+# ============================
+def predict(model, df_processed):
+    try:
+        # Hacer predicciones con el modelo
         probabilidad_renuncia = model.predict_proba(df_processed)[:, 1]
-        predictions = (probabilidad_renuncia > 0.5).astype(int)
-        
-        # Añadir las predicciones al DataFrame original
-        df['Prediction_Renuncia'] = predictions
-        df['Probabilidad_Renuncia'] = probabilidad_renuncia
+        predictions = (probabilidad_renuncia > 0.5).astype(int)  # Aplicar umbral para clasificación binaria
+        return probabilidad_renuncia, predictions
+    except Exception as e:
+        st.error(f"Error al hacer la predicción: {e}")
+        return None, None
 
-        return df
-    return None
 
-# =======================
-# Función para ingresar manualmente las variables
-# =======================
-def simulate_scenario(model, categorical_mapping, scaler, model_feature_columns):
-    st.write("### Simulación Manual de Escenario")
-
-    # Crear campos para ingresar las variables manualmente
-    edad = st.number_input("Edad", min_value=18, max_value=100, value=30)
-    ingreso_mensual = st.number_input("Ingreso Mensual", min_value=1000, max_value=20000, value=3000)
-    satisfaccion_laboral = st.slider("Satisfacción Laboral", min_value=1, max_value=4, value=3)
-    años_en_empresa = st.number_input("Años en la Empresa", min_value=0, max_value=50, value=5)
-
-    # Crear un dataframe con estas variables
-    input_data = {
-        'Age': [edad],
-        'MonthlyIncome': [ingreso_mensual],
-        'JobSatisfaction': [satisfaccion_laboral],
-        'YearsAtCompany': [años_en_empresa],
-    }
-
-    input_df = pd.DataFrame(input_data)
-
-    # Preprocesar el dataframe y hacer la predicción
-    result_df = make_predictions(input_df, model, categorical_mapping, scaler, model_feature_columns)
-
-    if result_df is not None:
-        st.write("### Resultados de la Predicción Manual")
-        st.write(result_df[['Age', 'MonthlyIncome', 'JobSatisfaction', 'YearsAtCompany', 'Prediction_Renuncia', 'Probabilidad_Renuncia']])
-        
-        # Mostrar gráfico de riesgo
-        st.write("Gráfico de riesgo de deserción")
-        plot_risk_circular(result_df['Probabilidad_Renuncia'][0])
-
-        # Recomendaciones
-        st.write("### Recomendaciones:")
-        if result_df['Probabilidad_Renuncia'][0] > 0.7:
-            st.markdown("**Recomendación:** Priorizar intervención, realizar entrevistas de retención, ofrecer soluciones personalizadas.")
-        else:
-            st.markdown("**Recomendación:** Continuar con las políticas actuales, monitorear periódicamente su satisfacción.")
-
-# =======================
-# Función principal
-# =======================
+# ============================
+#  Interfaz Streamlit
+# ============================
 def main():
-    st.set_page_config(page_title="Simulador de Deserción de Empleados", layout="wide")
-    st.title("Simulador de Deserción de Empleados")
+    st.set_page_config(page_title="Predicción y Simulación de Renuncia", layout="wide")
+    st.title("📊 Modelo de Predicción y Simulación de Renuncia de Empleados")
+    st.markdown("Carga tu archivo de datos para obtener predicciones o ingresa manualmente los datos para simular escenarios.")
 
     model, categorical_mapping, scaler, df_reference_features, true_labels_reference = load_model()
     if model is None:
         return
 
-    # Definir las columnas del modelo
+    # Columnas que debe tener el dataset cargado
     model_feature_columns = [
-        'Age', 'BusinessTravel', 'Department', 'MonthlyIncome', 'JobSatisfaction', 
-        'YearsAtCompany', 'HourlyRate', 'DistanceFromHome', 'Education', 'Gender',
-        'JobRole', 'MaritalStatus', 'OverTime'
+        'Age', 'BusinessTravel', 'DailyRate', 'Department', 'DistanceFromHome', 'Education', 'EducationField', 
+        'EnvironmentSatisfaction', 'Gender', 'HourlyRate', 'JobInvolvement', 'JobLevel', 'JobRole', 'JobSatisfaction', 
+        'MaritalStatus', 'MonthlyIncome', 'MonthlyRate', 'NumCompaniesWorked', 'OverTime', 'PercentSalaryHike', 
+        'PerformanceRating', 'RelationshipSatisfaction', 'StockOptionLevel', 'TotalWorkingYears', 'TrainingTimesLastYear', 
+        'WorkLifeBalance', 'YearsAtCompany', 'YearsInCurrentRole', 'YearsSinceLastPromotion', 'YearsWithCurrManager', 
+        'IntencionPermanencia', 'CargaLaboralPercibida', 'SatisfaccionSalarial', 'ConfianzaEmpresa', 'NumeroTardanzas', 
+        'NumeroFaltas'
     ]
+    
+    # ---------------------------------------
+    # Opción de cargar archivo CSV o Excel
+    # ---------------------------------------
+    uploaded_file = st.file_uploader("Sube un archivo CSV o Excel (.csv, .xlsx) para PREDICCIÓN", type=["csv", "xlsx"])
+    
+    if uploaded_file is not None:
+        try:
+            if uploaded_file.name.endswith('.csv'):
+                df = pd.read_csv(uploaded_file)
+            else:
+                df = pd.read_excel(uploaded_file)
 
-    # Crear un menú de selección de pestañas
-    page = st.radio("Selecciona una opción", ["Predicción con archivo CSV", "Simulación Manual de Escenario"])
+            st.info(f"✅ Archivo cargado correctamente. Total de filas: {len(df)}")
+            st.dataframe(df.head())
+        except Exception as e:
+            st.error(f"Error al leer el archivo: {e}")
+            return
 
-    if page == "Predicción con archivo CSV":
-        # Cargar el archivo CSV
-        uploaded_file = st.file_uploader("Sube tu archivo CSV", type=["csv"])
-        if uploaded_file is not None:
-            df = pd.read_csv(uploaded_file)
-            st.write(df.head())  # Muestra los primeros 5 registros del archivo subido
+        # Procesar el archivo cargado
+        df_features_uploaded = df.drop(columns=['Attrition'], errors='ignore').copy()
+        processed_df = preprocess_data(df_features_uploaded, model_feature_columns, categorical_mapping, scaler)
+        
+        if processed_df is None:
+            st.error("No se puede continuar con la predicción debido a un error de preprocesamiento.")
+            return
+        
+        # Ejecutar predicción con los datos cargados
+        st.header("1. Predicción con Datos Cargados")
+        if st.button("🚀 Ejecutar Predicción y Evaluación"):
+            st.info("Ejecutando el modelo sobre los datos cargados...")
+            probabilidad_renuncia, predictions = predict(model, processed_df)
 
-            if st.button("Realizar Predicciones"):
-                # Realizar la predicción
-                result_df = make_predictions(df, model, categorical_mapping, scaler, model_feature_columns)
+            # Unir resultados a la data original
+            df['Prediction_Renuncia'] = predictions
+            df['Probabilidad_Renuncia'] = probabilidad_renuncia
+            st.success("✅ Predicción y Evaluación de datos cargados Completadas!")
+            st.dataframe(df[['Prediction_Renuncia', 'Probabilidad_Renuncia']])
 
-                if result_df is not None:
-                    # Mostrar resultados
-                    st.write("Resultados de las predicciones")
-                    st.write(result_df[['EmployeeNumber', 'Prediction_Renuncia', 'Probabilidad_Renuncia']])
+    # ---------------------------------------
+    # Ingreso manual de datos
+    # ---------------------------------------
+    st.subheader("2. Ingreso Manual de Datos para Predicción")
+    
+    # Crear campos de entrada para el usuario
+    manual_data = {}
+    for col in model_feature_columns:
+        if col == 'Age':
+            manual_data[col] = st.number_input(f"{col}", min_value=18, max_value=100, value=30)
+        elif col == 'MonthlyIncome':
+            manual_data[col] = st.number_input(f"{col}", min_value=0, max_value=100000, value=30000)
+        elif col == 'Gender':
+            manual_data[col] = st.selectbox(f"{col}", options=['Male', 'Female'])
+        else:
+            manual_data[col] = st.text_input(f"{col}")
+    
+    if st.button("🚀 Predecir Manualmente"):
+        df_manual = pd.DataFrame([manual_data])
+        processed_manual_data = preprocess_data(df_manual, model_feature_columns, categorical_mapping, scaler)
 
-                    # Mostrar gráfico de riesgo
-                    st.write("Gráfico de riesgo de deserción")
-                    for index, row in result_df.iterrows():
-                        plot_risk_circular(row['Probabilidad_Renuncia'])
+        if processed_manual_data is not None:
+            probabilidad_renuncia, predictions = predict(model, processed_manual_data)
+            st.success("✅ Predicción Manual Completa!")
+            st.write(f"Probabilidad de renuncia: {probabilidad_renuncia[0]:.2f}")
+            st.write(f"Predicción: {'Renunciará' if predictions[0] == 1 else 'No Renunciará'}")
+        else:
+            st.error("Error en el preprocesamiento de los datos manuales.")
 
-                    # Recomendaciones
-                    st.write("### Recomendaciones:")
-                    for index, row in result_df.iterrows():
-                        if row['Probabilidad_Renuncia'] > 0.7:
-                            st.write(f"Empleado {row['EmployeeNumber']} con alta probabilidad de deserción ({row['Probabilidad_Renuncia']*100:.2f}%)")
-                            st.markdown("**Recomendación:** Priorizar intervención, realizar entrevistas de retención, ofrecer soluciones personalizadas.")
-                        else:
-                            st.write(f"Empleado {row['EmployeeNumber']} con baja probabilidad de deserción ({row['Probabilidad_Renuncia']*100:.2f}%)")
-                            st.markdown("**Recomendación:** Continuar con las políticas actuales, monitorear periódicamente su satisfacción.")
 
-    elif page == "Simulación Manual de Escenario":
-        simulate_scenario(model, categorical_mapping, scaler, model_feature_columns)
-
-# =======================
-# Ejecutar la app
-# =======================
 if __name__ == "__main__":
     main()
+
 
 
 

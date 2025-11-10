@@ -2,76 +2,39 @@ import pandas as pd
 import numpy as np
 import joblib
 import streamlit as st
-import os
-from sklearn.preprocessing import MinMaxScaler
 import matplotlib.pyplot as plt
+from sklearn.preprocessing import LabelEncoder, MinMaxScaler
 
-# ========================== 
-# 1. Cargar Modelos y Artefactos 
-# ==========================
-@st.cache_resource
+# ============================
+# 1. Cargar el Modelo y Escalador
+# ============================
 def load_model():
-    try:
-        # Cargar modelos y artefactos
-        model = joblib.load('models/xgboost_model.pkl')
-        categorical_mapping = joblib.load('models/categorical_mapping.pkl')  # Cargar el diccionario de codificación
-        scaler = joblib.load('models/scaler.pkl')
+    model = joblib.load('xgboost_model.pkl')  # Asegúrate de tener tu modelo XGBoost guardado como un archivo .pkl
+    return model
 
-        REFERENCE_DATA_PATH = 'data/reference_data.csv'
-        if not os.path.exists(REFERENCE_DATA_PATH):
-            st.error(f"Error: No se encontró la data de referencia en '{REFERENCE_DATA_PATH}'. Necesaria para evaluación de simulaciones.")
-            return None, None, None, None, None
-
-        df_reference = pd.read_csv(REFERENCE_DATA_PATH)
-        if 'Attrition' not in df_reference.columns:
-            st.error("Error: La data de referencia debe contener la columna 'Attrition' para la evaluación.")
-            return None, None, None, None, None
-
-        df_reference['Attrition'] = df_reference['Attrition'].replace({'Yes': 1, 'No': 0})
-        true_labels_reference = df_reference['Attrition'].astype(int).copy()
-        df_reference_features = df_reference.drop(columns=['Attrition'], errors='ignore').copy()
-
-        st.success("✅ Modelo y artefactos cargados correctamente.")
-        return model, categorical_mapping, scaler, df_reference_features, true_labels_reference
-    except FileNotFoundError:
-        st.error("Error: Archivos del modelo (xgboost_model.pkl, categorical_mapping.pkl, scaler.pkl) no encontrados. Asegúrate de tener la carpeta 'models' con los 3 archivos.")
-        return None, None, None, None, None
-    except Exception as e:
-        st.error(f"Error al cargar artefactos o data de referencia: {e}")
-        return None, None, None, None, None
-
+def load_scaler():
+    scaler = joblib.load('scaler.pkl')  # Asegúrate de tener tu escalador guardado como un archivo .pkl
+    return scaler
 
 # ============================
-# 2. Función de Preprocesamiento
+# 2. Preprocesamiento de Datos
 # ============================
-def preprocess_data(df, model_columns, categorical_mapping, scaler):
-    df_processed = df.copy()
-
-    # Rellenar nulos y codificar
-    df_processed = df_processed.drop_duplicates()
-    numeric_cols_for_fillna = df_processed.select_dtypes(include=np.number).columns.tolist()
-
-    cols_to_fill = list(set(numeric_cols_for_fillna) & set(model_columns))
-    df_processed[cols_to_fill] = df_processed[cols_to_fill].fillna(df_processed[cols_to_fill].mean())
-
-    nominal_categorical_cols = ['BusinessTravel', 'Department', 'EducationField', 'Gender', 'JobRole', 'MaritalStatus', 'OverTime']
-    for col in nominal_categorical_cols:
-        if col in df_processed.columns:
-            df_processed[col] = df_processed[col].astype(str).str.strip().str.upper()
-            if col in categorical_mapping:
-                df_processed[col] = df_processed[col].map(categorical_mapping[col])
-            df_processed[col] = df_processed[col].fillna(categorical_mapping.get(col, {}).get('DESCONOCIDO', -1))
-
-    df_to_scale = df_processed[model_columns].copy()
-
+def preprocess_data(df, model_feature_columns, categorical_mapping, scaler):
+    # Convertir variables categóricas
+    for col, mapping in categorical_mapping.items():
+        df[col] = df[col].map(mapping).fillna(-1)
+    
+    # Eliminar columnas no necesarias
+    df = df[model_feature_columns]
+    
+    # Escalar datos
     try:
-        df_processed[model_columns] = scaler.transform(df_to_scale)
+        df_scaled = scaler.transform(df)
     except Exception as e:
-        st.error(f"Error al escalar los datos: {e}. ¿El scaler fue entrenado correctamente con la forma de la data?")
+        st.error(f"Error al escalar los datos: {e}")
         return None
-
-    return df_processed[model_columns]
-
+    
+    return pd.DataFrame(df_scaled, columns=model_feature_columns)
 
 # ============================
 # 3. Función para Semaforización y Predicción
@@ -98,6 +61,11 @@ def display_risk_alert(df, model, categorical_mapping, scaler, model_feature_col
 
     # Crear la columna de 'Riesgo' y 'Color' basado en la probabilidad
     df['Riesgo'], df['Color'] = zip(*df['Probabilidad_Renuncia'].apply(semaforo))
+
+    # Verificar si las columnas necesarias existen
+    if 'Riesgo' not in df.columns or 'Color' not in df.columns:
+        st.error("Las columnas necesarias para la semaforización ('Riesgo' y 'Color') no fueron creadas correctamente.")
+        return
 
     # Mostrar la tabla con la semaforización
     st.subheader("Alertas de Riesgo de Deserción")
@@ -132,56 +100,50 @@ def display_risk_alert(df, model, categorical_mapping, scaler, model_feature_col
     st.subheader("Empleados con Alto Riesgo")
     st.dataframe(high_risk_df[['EmployeeNumber', 'Probabilidad_Renuncia', 'Riesgo']])
 
-
 # ============================
-# 4. Interfaz Streamlit
+# 4. Función principal
 # ============================
 def main():
-    st.set_page_config(page_title="Predicción de Deserción", layout="wide")
-    st.title("📊 Modelo de Predicción de Deserción de Empleados")
-    st.markdown("Sube tu archivo de datos para obtener las predicciones de deserción.")
+    # Cargar el modelo y el escalador
+    model = load_model()
+    scaler = load_scaler()
 
-    # Cargar el modelo y artefactos
-    model, categorical_mapping, scaler, df_reference_features, true_labels_reference = load_model()
-    if model is None:
-        return
-
-    # Columnas del modelo (debe coincidir con las columnas del entrenamiento)
-    model_feature_columns = [
-        'Age', 'BusinessTravel', 'DailyRate', 'Department', 'DistanceFromHome',
-        'Education', 'EducationField', 'EnvironmentSatisfaction', 'Gender', 'HourlyRate',
-        'JobInvolvement', 'JobLevel', 'JobRole', 'JobSatisfaction', 'MaritalStatus',
-        'MonthlyIncome', 'MonthlyRate', 'NumCompaniesWorked', 'OverTime', 'PercentSalaryHike',
-        'PerformanceRating', 'RelationshipSatisfaction', 'StockOptionLevel', 'TotalWorkingYears',
-        'TrainingTimesLastYear', 'WorkLifeBalance', 'YearsAtCompany', 'YearsInCurrentRole',
-        'YearsSinceLastPromotion', 'YearsWithCurrManager', 'IntencionPermanencia', 'CargaLaboralPercibida', 
-        'SatisfaccionSalarial', 'ConfianzaEmpresa', 'NumeroTardanzas', 'NumeroFaltas'
-    ]
-
-    # Subir archivo
-    uploaded_file = st.file_uploader("Sube un archivo CSV o Excel (.csv, .xlsx)", type=["csv", "xlsx"])
+    # Definir las columnas de características del modelo y el mapeo de variables categóricas
+    model_feature_columns = ['Age', 'Attrition', 'BusinessTravel', 'DailyRate', 'Department', 'DistanceFromHome',
+                             'Education', 'EducationField', 'EmployeeCount', 'EmployeeNumber', 'EnvironmentSatisfaction',
+                             'Gender', 'HourlyRate', 'JobInvolvement', 'JobLevel', 'JobRole', 'JobSatisfaction', 'MaritalStatus',
+                             'MonthlyIncome', 'MonthlyRate', 'NumCompaniesWorked', 'Over18', 'OverTime', 'PercentSalaryHike',
+                             'PerformanceRating', 'RelationshipSatisfaction', 'StandardHours', 'StockOptionLevel', 'TotalWorkingYears',
+                             'TrainingTimesLastYear', 'WorkLifeBalance', 'YearsAtCompany', 'YearsInCurrentRole', 'YearsSinceLastPromotion',
+                             'YearsWithCurrManager', 'IntencionPermanencia', 'CargaLaboralPercibida', 'SatisfaccionSalarial', 
+                             'ConfianzaEmpresa', 'NumeroTardanzas', 'NumeroFaltas', 'FechaIngreso', 'FechaSalida']
     
-    if uploaded_file is not None:
-        try:
-            if uploaded_file.name.endswith('.csv'):
-                df = pd.read_csv(uploaded_file)
-            else:
-                df = pd.read_excel(uploaded_file)
-            st.info(f"✅ Archivo cargado correctamente. Total de filas: {len(df)}")
-            st.dataframe(df.head())
-        except Exception as e:
-            st.error(f"Error al leer el archivo: {e}")
-            return
+    categorical_mapping = {
+        'BusinessTravel': {'Travel_Rarely': 0, 'Travel_Frequently': 1, 'Non-Travel': 2},
+        'Department': {'Sales': 0, 'Research & Development': 1, 'Human Resources': 2},
+        'EducationField': {'Life Sciences': 0, 'Other': 1, 'Medical': 2, 'Marketing': 3, 'Technical Degree': 4, 'Human Resources': 5},
+        'Gender': {'Male': 0, 'Female': 1},
+        'MaritalStatus': {'Single': 0, 'Married': 1, 'Divorced': 2},
+        'OverTime': {'No': 0, 'Yes': 1}
+    }
 
-        # Mostrar alertas de riesgo y predicciones
+    # Subir archivo CSV de empleados
+    uploaded_file = st.file_uploader("Cargar archivo CSV con los datos de empleados", type="csv")
+
+    if uploaded_file is not None:
+        df = pd.read_csv(uploaded_file)
+        st.subheader("Datos de Empleados")
+        st.dataframe(df.head())
+
+        # Mostrar alertas de riesgo
         display_risk_alert(df, model, categorical_mapping, scaler, model_feature_columns)
 
-
 # ============================
-# Inicio de la Aplicación
+# Ejecutar la aplicación
 # ============================
 if __name__ == "__main__":
     main()
+
 
 
 

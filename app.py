@@ -160,18 +160,8 @@ def main():
             df_original['Prediction_Renuncia'] = predictions
             df_original['Probabilidad_Renuncia'] = probabilidad_renuncia
 
-            # Evaluación de métricas (Accuracy)
-            if 'Attrition' in df_original.columns:
-                true_labels_uploaded = df_original['Attrition'].replace({'Yes': 1, 'No': 0}).astype(int)
-                acc = evaluate_metrics(true_labels_uploaded, predictions)
-                st.success("✅ Predicción completada!")
-                st.metric(label="Accuracy", value=f"{acc:.4f}")
-
-            else:
-                st.warning("⚠️ El archivo cargado no tiene la columna 'Attrition'. Solo se muestran las predicciones.")
-            
-            # Recomendaciones
-            display_recommendations(df_original)
+            # Recomendaciones y visualización
+            display_risk_alert(df_original)
 
             # Botón de descarga
             st.download_button(
@@ -181,60 +171,47 @@ def main():
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             )
 
+
 # ============================
-#  Funciones de Recomendaciones
+#  Alertas y Visualización
 # ============================
-def display_recommendations(df_results):
+def display_risk_alert(df):
     st.markdown("---")
-    st.header("💡 Recomendaciones Estratégicas")
+    st.header("🚨 Alerta de Empleados con Riesgo de Deserción")
 
-    # Identificar el umbral de alto riesgo (ej. Probabilidad > 70%)
-    high_risk_threshold = 0.70
-    df_high_risk = df_results[df_results['Probabilidad_Renuncia'] > high_risk_threshold]
+    # Categorizar el riesgo
+    df['Riesgo'] = pd.cut(df['Probabilidad_Renuncia'], bins=[0, 0.3, 0.7, 1], labels=["Bajo", "Medio", "Alto"])
     
-    if df_high_risk.empty:
-        st.success("El riesgo de deserción es bajo. Mantenga las políticas actuales.")
-        return
+    # Semaforización de riesgo
+    colors = {
+        "Bajo": "green",
+        "Medio": "yellow",
+        "Alto": "red"
+    }
+    
+    st.dataframe(df[['EmployeeNumber', 'Name', 'Riesgo', 'Probabilidad_Renuncia']].style.applymap(lambda v: f'background-color: {colors[v]}', subset=['Riesgo']))
 
-    # 1. Recomendación a Nivel Individual (Intervención)
-    top_risk_count = min(10, len(df_high_risk))
-    st.subheader("1. Intervención Individual Prioritaria")
-    st.markdown(f"**Enfocarse en los {top_risk_count} empleados con la más alta probabilidad de renuncia** (Probabilidad > {high_risk_threshold * 100:.0f}%).")
-    st.info("Acción sugerida: Realizar entrevistas de retención confidenciales para entender sus preocupaciones y ofrecer soluciones personalizadas.")
+    # Gráfico Circular de Distribución de Riesgo
+    fig, ax = plt.subplots(figsize=(5, 5))
+    risk_dist = df['Riesgo'].value_counts()
+    ax.pie(risk_dist, labels=risk_dist.index, autopct='%1.1f%%', startangle=90, colors=["#28a745", "#f9d04e", "#dc3545"])
+    ax.axis('equal')  # Equal aspect ratio ensures that pie is drawn as a circle.
+    st.pyplot(fig)
 
-    # 2. Recomendación a Nivel Departamental (Foco)
-    if 'Department' in df_high_risk.columns:
-        st.subheader("2. Foco Departamental")
-        risk_by_dept = df_high_risk.groupby('Department').size().sort_values(ascending=False)
-        top_risk_dept = risk_by_dept.index[0]
-        st.markdown(f"El departamento de **{top_risk_dept}** concentra el mayor número de empleados en alto riesgo.")
-        st.warning(f"Acción sugerida: Evaluar la carga de trabajo, la gestión de líderes y los niveles de satisfacción general del equipo en **{top_risk_dept}**.")
-
-    # 3. Recomendación a Nivel Global/Estratégico (Prevención)
-    st.subheader("3. Estrategia Global de Prevención")
-    if 'MonthlyIncome' in df_high_risk.columns:
-        avg_high_risk_income = df_high_risk['MonthlyIncome'].mean()
-        avg_total_income = df_results['MonthlyIncome'].mean()
-        
-        if avg_high_risk_income < avg_total_income * 0.9:
-            st.markdown("Se observa una correlación entre el bajo **MonthlyIncome** y el alto riesgo de deserción.")
-            st.info("Acción sugerida: Revisar y ajustar la banda salarial para los roles de mayor riesgo.")
+    # Gráfico de Barra para Distribución de Riesgo por Departamento
+    fig, ax = plt.subplots(figsize=(10, 6))
+    df.groupby(['Department', 'Riesgo']).size().unstack().plot(kind='bar', stacked=True, ax=ax, color=['#28a745', '#f9d04e', '#dc3545'])
+    ax.set_ylabel('Número de Empleados')
+    ax.set_xlabel('Departamento')
+    ax.set_title('Distribución de Riesgo por Departamento')
+    st.pyplot(fig)
 
 # ============================
-#  Funciones de Exportación
-# ============================
-def export_results_to_excel(df, filename="predicciones_resultados.xlsx"):
-    # Exportar resultados a Excel
-    with pd.ExcelWriter(filename, engine='xlsxwriter') as output:
-        df.to_excel(output, sheet_name='Predicciones', index=False)
-        
-    return filename
-
-# ============================
-#  Inicio de la Aplicación
+#  Ejecutar la app
 # ============================
 if __name__ == "__main__":
     main()
+
 
 
 

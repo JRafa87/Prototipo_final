@@ -7,7 +7,7 @@ from sklearn.preprocessing import MinMaxScaler
 import plotly.express as px
 
 # ==========================
-# 1. Cargar Modelos y Artefactos
+# 1. Cargar modelos y data
 # ==========================
 @st.cache_resource
 def load_model():
@@ -18,34 +18,29 @@ def load_model():
 
         REFERENCE_DATA_PATH = 'data/reference_data.csv'
         if not os.path.exists(REFERENCE_DATA_PATH):
-            st.error(f"Error: No se encontró la data de referencia en '{REFERENCE_DATA_PATH}'.")
+            st.error(f"No se encontró la data de referencia: '{REFERENCE_DATA_PATH}'.")
             return None, None, None, None, None
 
         df_reference = pd.read_csv(REFERENCE_DATA_PATH)
-        if 'Attrition' not in df_reference.columns:
-            st.error("Error: La data de referencia debe contener la columna 'Attrition'.")
-            return None, None, None, None, None
-
         df_reference['Attrition'] = df_reference['Attrition'].replace({'Yes': 1, 'No': 0})
-        true_labels_reference = df_reference['Attrition'].astype(int).copy()
-        df_reference_features = df_reference.drop(columns=['Attrition'], errors='ignore').copy()
+        true_labels_reference = df_reference['Attrition']
+        df_reference_features = df_reference.drop(columns=['Attrition'], errors='ignore')
 
         st.success("✅ Modelo y artefactos cargados correctamente.")
         return model, categorical_mapping, scaler, df_reference_features, true_labels_reference
 
     except Exception as e:
-        st.error(f"Error al cargar artefactos o data de referencia: {e}")
+        st.error(f"Error al cargar artefactos o data: {e}")
         return None, None, None, None, None
 
 
-# ================================
-# 2. Funciones de Preprocesamiento
-# ================================
+# ==========================
+# 2. Preprocesamiento
+# ==========================
 def preprocess_data(df, model_columns, categorical_mapping, scaler):
     df_processed = df.copy().drop_duplicates()
     numeric_cols = df_processed.select_dtypes(include=np.number).columns.tolist()
-    cols_to_fill = list(set(numeric_cols) & set(model_columns))
-    df_processed[cols_to_fill] = df_processed[cols_to_fill].fillna(df_processed[cols_to_fill].mean())
+    df_processed[numeric_cols] = df_processed[numeric_cols].fillna(df_processed[numeric_cols].mean())
 
     categorical_cols = [
         'BusinessTravel', 'Department', 'EducationField', 'Gender', 'JobRole',
@@ -59,54 +54,37 @@ def preprocess_data(df, model_columns, categorical_mapping, scaler):
                 df_processed[col] = df_processed[col].map(categorical_mapping[col])
             df_processed[col] = df_processed[col].fillna(categorical_mapping.get(col, {}).get('DESCONOCIDO', -1))
 
-    try:
-        df_processed[model_columns] = scaler.transform(df_processed[model_columns])
-    except Exception as e:
-        st.error(f"Error al escalar los datos: {e}")
-        return None
-
+    df_processed[model_columns] = scaler.transform(df_processed[model_columns])
     return df_processed[model_columns]
 
 
-# ============================
-# Función de Recomendación
-# ============================
+# ==========================
+# 3. Recomendaciones
+# ==========================
 def generar_recomendacion_personalizada(row):
     recomendaciones = []
-
     if row.get('IntencionPermanencia', 3) <= 2:
         recomendaciones.append("Reforzar conversaciones de desarrollo profesional.")
     if row.get('CargaLaboralPercibida', 3) >= 4:
-        recomendaciones.append("Revisar la carga laboral y redistribuir tareas.")
+        recomendaciones.append("Revisar carga laboral y redistribuir tareas.")
     if row.get('SatisfaccionSalarial', 3) <= 2:
         recomendaciones.append("Evaluar ajustes salariales o beneficios.")
     if row.get('ConfianzaEmpresa', 3) <= 2:
-        recomendaciones.append("Fomentar la transparencia y la confianza.")
+        recomendaciones.append("Fomentar transparencia y confianza.")
     if row.get('NumeroTardanzas', 0) > 3 or row.get('NumeroFaltas', 0) > 1:
         recomendaciones.append("Revisar causas de ausentismo y ofrecer apoyo.")
 
     if not recomendaciones:
-        recomendaciones.append("Sin alertas relevantes. Mantener seguimiento preventivo.")
-
+        recomendaciones.append("Sin alertas relevantes. Seguimiento preventivo.")
     return " • ".join(recomendaciones)
 
 
-# ============================
-# Función Exportación
-# ============================
-def export_results_to_excel(df, filename="predicciones_resultados.xlsx"):
-    with pd.ExcelWriter(filename, engine='xlsxwriter') as output:
-        df.to_excel(output, sheet_name='Predicciones', index=False)
-    return filename
-
-
-# ============================
-# 3. Interfaz Streamlit
-# ============================
+# ==========================
+# 4. App principal
+# ==========================
 def main():
     st.set_page_config(page_title="Predicción de Renuncia", layout="wide")
-    st.title("📊 Modelo de Predicción de Renuncia de Empleados")
-    st.markdown("Carga tu archivo de datos para obtener predicciones y análisis de riesgo.")
+    st.title("📊 Predicción de Renuncia de Empleados")
 
     model, categorical_mapping, scaler, df_reference_features, true_labels_reference = load_model()
     if model is None:
@@ -128,7 +106,6 @@ def main():
     if uploaded_file is not None:
         df = pd.read_csv(uploaded_file) if uploaded_file.name.endswith('.csv') else pd.read_excel(uploaded_file)
         st.info(f"✅ Archivo cargado correctamente. Total de filas: {len(df)}")
-        st.dataframe(df.head())
 
         processed_df = preprocess_data(df.drop(columns=['Attrition'], errors='ignore'), model_columns, categorical_mapping, scaler)
         if processed_df is None:
@@ -140,89 +117,65 @@ def main():
             df['Prediction_Renuncia'] = (prob > 0.5).astype(int)
             df['Recomendacion'] = df.apply(generar_recomendacion_personalizada, axis=1)
 
-            # ALERTA PRINCIPAL
-            high_risk = df[df['Probabilidad_Renuncia'] > 0.5]
-            if len(high_risk) > 0:
-                st.error(f"🚨 Se detectaron **{len(high_risk)} empleados** con ALTA probabilidad de renuncia (>50%).")
-            else:
-                st.success("🎉 No se detectaron empleados con alto riesgo.")
-
-            # SEMAFORIZACIÓN CLARA SEGÚN UMBRALES
-            def color_prob(val):
-                if val > 0.61:
-                    return 'background-color: #FF4D4D; color: white;'  # rojo
-                elif 0.50 <= val <= 0.60:
-                    return 'background-color: #FFD966; color: black;'  # amarillo
+            # Semaforización según umbrales
+            def color_riesgo(p):
+                if p > 0.61:
+                    return "🔴 Alto"
+                elif 0.50 <= p <= 0.60:
+                    return "🟡 Medio"
                 else:
-                    return 'background-color: #93C47D; color: black;'  # verde
+                    return "🟢 Bajo"
 
-            # ============================
-            # TABLA PRINCIPAL CON EXPANDER
-            # ============================
-            st.subheader("👥 Top 10 empleados con mayor probabilidad de renuncia")
-            df_top10 = df.sort_values('Probabilidad_Renuncia', ascending=False).head(10).copy()
+            df['Nivel_Riesgo'] = df['Probabilidad_Renuncia'].apply(color_riesgo)
+            df['Probabilidad_%'] = (df['Probabilidad_Renuncia'] * 100).round(2).astype(str) + '%'
 
-            for idx, row in df_top10.iterrows():
-                color = (
-                    "#FF4D4D" if row['Probabilidad_Renuncia'] > 0.61
-                    else "#FFD966" if 0.50 <= row['Probabilidad_Renuncia'] <= 0.60
-                    else "#93C47D"
-                )
+            # Tabla resumen
+            df_tabla = df[['EmployeeNumber', 'JobRole', 'Department', 'MonthlyIncome',
+                           'Nivel_Riesgo', 'Probabilidad_%', 'Recomendacion']]
 
-                with st.container():
-                    st.markdown(
-                        f"""
-                        <div style="background-color:{color}; padding:10px; border-radius:10px; margin-bottom:5px;">
-                        <b>👤 Empleado #{row['EmployeeNumber']}</b> | {row['JobRole']} ({row['Department']})<br>
-                        💵 <b>Ingreso mensual:</b> ${row['MonthlyIncome']:.2f} |
-                        🎯 <b>Probabilidad:</b> {row['Probabilidad_Renuncia']*100:.2f}%
-                        </div>
-                        """,
-                        unsafe_allow_html=True
+            st.subheader("👥 Empleados con riesgo de renuncia")
+            st.markdown("Haz clic en una fila para ver la recomendación completa 👇")
+
+            # Usar st.data_editor con expandibles
+            st.data_editor(
+                df_tabla,
+                column_config={
+                    "Recomendacion": st.column_config.TextColumn(
+                        "Recomendación personalizada", help="Sugerencias de retención"
                     )
-                    with st.expander("👁️ Ver recomendación personalizada"):
-                        st.write(row['Recomendacion'])
-
-            # ============================
-            # GRÁFICOS EN UNA MISMA FILA
-            # ============================
-            st.subheader("📊 Análisis por Departamento")
-            col1, col2 = st.columns(2)
-
-            with col1:
-                dept_avg = df.groupby('Department')['Probabilidad_Renuncia'].mean().reset_index()
-                fig_bar = px.bar(
-                    dept_avg, x='Department', y='Probabilidad_Renuncia',
-                    text_auto='.2%', color='Probabilidad_Renuncia',
-                    color_continuous_scale='Reds',
-                    title="Probabilidad promedio por departamento"
-                )
-                st.plotly_chart(fig_bar, use_container_width=True)
-
-            with col2:
-                fig_pie = px.pie(
-                    dept_avg, names='Department', values='Probabilidad_Renuncia',
-                    color_discrete_sequence=px.colors.qualitative.Pastel,
-                    hole=0.4, title="Distribución total por departamento"
-                )
-                st.plotly_chart(fig_pie, use_container_width=True)
-
-            # ============================
-            # DESCARGA
-            # ============================
-            st.download_button(
-                "⬇️ Descargar resultados (Excel)",
-                data=export_results_to_excel(df),
-                file_name="predicciones_resultados.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                },
+                hide_index=True,
+                use_container_width=True,
+                height=500
             )
 
+            # Gráficos por departamento
+            st.subheader("📊 Promedio de probabilidad por departamento")
+            dept_avg = df.groupby('Department')['Probabilidad_Renuncia'].mean().reset_index()
 
-# ============================
-# Inicio
-# ============================
+            col1, col2 = st.columns(2)
+            with col1:
+                st.plotly_chart(
+                    px.bar(dept_avg, x='Department', y='Probabilidad_Renuncia',
+                           color='Probabilidad_Renuncia', color_continuous_scale='Reds',
+                           title="Probabilidad promedio de renuncia por departamento"),
+                    use_container_width=True
+                )
+            with col2:
+                st.plotly_chart(
+                    px.pie(dept_avg, names='Department', values='Probabilidad_Renuncia',
+                           title="Distribución general del riesgo por departamento",
+                           hole=0.4),
+                    use_container_width=True
+                )
+
+
+# ==========================
+# 5. Ejecutar
+# ==========================
 if __name__ == "__main__":
     main()
+
 
 
 

@@ -74,60 +74,30 @@ def preprocess_data(df, model_columns, categorical_mapping, scaler):
 
 
 # ============================
-# Funciones de Recomendaciones
+# Función de Recomendación
 # ============================
 def generar_recomendacion_personalizada(row):
     recomendaciones = []
 
     if row.get('IntencionPermanencia', 3) <= 2:
-        recomendaciones.append("💬 Reforzar conversaciones de desarrollo profesional para mejorar la intención de permanencia.")
+        recomendaciones.append("Reforzar conversaciones de desarrollo profesional.")
     if row.get('CargaLaboralPercibida', 3) >= 4:
-        recomendaciones.append("🕒 Revisar la carga laboral percibida y redistribuir tareas si es necesario.")
+        recomendaciones.append("Revisar la carga laboral y redistribuir tareas.")
     if row.get('SatisfaccionSalarial', 3) <= 2:
-        recomendaciones.append("💰 Evaluar ajustes salariales o beneficios complementarios.")
+        recomendaciones.append("Evaluar ajustes salariales o beneficios.")
     if row.get('ConfianzaEmpresa', 3) <= 2:
-        recomendaciones.append("🤝 Implementar acciones de transparencia y fortalecimiento de la confianza.")
+        recomendaciones.append("Fomentar la transparencia y la confianza.")
     if row.get('NumeroTardanzas', 0) > 3 or row.get('NumeroFaltas', 0) > 1:
-        recomendaciones.append("📅 Reunirse para entender causas de ausentismo y ofrecer apoyo personalizado.")
+        recomendaciones.append("Revisar causas de ausentismo y ofrecer apoyo.")
 
     if not recomendaciones:
-        recomendaciones.append("✅ No se detectan alertas críticas adicionales. Mantener seguimiento preventivo.")
+        recomendaciones.append("Sin alertas relevantes. Mantener seguimiento preventivo.")
 
-    return "\n".join(recomendaciones)
-
-
-def display_recommendations(df_results):
-    st.markdown("---")
-    st.header("💡 Recomendaciones Estratégicas")
-
-    high_risk_threshold = 0.70
-    df_high_risk = df_results[df_results['Probabilidad_Renuncia'] > high_risk_threshold]
-    
-    if df_high_risk.empty:
-        st.success("El riesgo de deserción es bajo. Mantenga las políticas actuales.")
-        return
-
-    st.subheader("1. Intervención Individual Prioritaria")
-    top_risk_count = min(10, len(df_high_risk))
-    st.markdown(f"**Enfocarse en los {top_risk_count} empleados con mayor probabilidad de renuncia** (>{high_risk_threshold*100:.0f}%).")
-    st.info("Realizar entrevistas de retención confidenciales para conocer sus motivaciones y preocupaciones.")
-
-    if 'Department' in df_high_risk.columns:
-        st.subheader("2. Foco Departamental")
-        risk_by_dept = df_high_risk.groupby('Department').size().sort_values(ascending=False)
-        top_risk_dept = risk_by_dept.index[0]
-        st.warning(f"El departamento de **{top_risk_dept}** tiene la mayor concentración de empleados en riesgo alto.")
-
-    st.subheader("3. Estrategia Global de Prevención")
-    if 'MonthlyIncome' in df_high_risk.columns:
-        avg_high_risk_income = df_high_risk['MonthlyIncome'].mean()
-        avg_total_income = df_results['MonthlyIncome'].mean()
-        if avg_high_risk_income < avg_total_income * 0.9:
-            st.info("💰 Revisar las bandas salariales: los empleados de mayor riesgo tienen ingresos promedio más bajos.")
+    return " | ".join(recomendaciones)
 
 
 # ============================
-# Funciones de Exportación
+# Función Exportación
 # ============================
 def export_results_to_excel(df, filename="predicciones_resultados.xlsx"):
     with pd.ExcelWriter(filename, engine='xlsxwriter') as output:
@@ -141,7 +111,7 @@ def export_results_to_excel(df, filename="predicciones_resultados.xlsx"):
 def main():
     st.set_page_config(page_title="Predicción de Renuncia", layout="wide")
     st.title("📊 Modelo de Predicción de Renuncia de Empleados")
-    st.markdown("Carga tu archivo de datos para obtener predicciones.")
+    st.markdown("Carga tu archivo de datos para obtener predicciones y análisis de riesgo.")
 
     model, categorical_mapping, scaler, df_reference_features, true_labels_reference = load_model()
     if model is None:
@@ -159,7 +129,7 @@ def main():
         'ConfianzaEmpresa', 'NumeroTardanzas', 'NumeroFaltas' 
     ]
 
-    uploaded_file = st.file_uploader("Sube un archivo CSV o Excel (.csv, .xlsx) para PREDICCIÓN", type=["csv", "xlsx"])
+    uploaded_file = st.file_uploader("📂 Sube un archivo CSV o Excel (.csv, .xlsx)", type=["csv", "xlsx"])
     
     if uploaded_file is not None:
         try:
@@ -173,85 +143,83 @@ def main():
             st.error(f"Error al leer el archivo: {e}")
             return
 
-        df_original = df.copy() 
+        df_original = df.copy()
         df_features_uploaded = df_original.drop(columns=['Attrition'], errors='ignore').copy()
         processed_df = preprocess_data(df_features_uploaded, model_feature_columns, categorical_mapping, scaler)
         
         if processed_df is None:
-            st.error("No se puede continuar con la predicción debido a un error de preprocesamiento.")
-            return 
+            st.error("❌ Error de preprocesamiento. Verifica tus datos.")
+            return
 
-        st.header("1. Predicción con Datos Cargados")
+        st.header("1️⃣ Predicción de Renuncia")
         
         if st.button("🚀 Ejecutar Predicción"):
-            st.info("Ejecutando el modelo sobre los datos cargados...")
+            st.info("Ejecutando modelo...")
 
             probabilidad_renuncia = model.predict_proba(processed_df)[:, 1]
             predictions = (probabilidad_renuncia > 0.5).astype(int)
-            
             df_original['Prediction_Renuncia'] = predictions
             df_original['Probabilidad_Renuncia'] = probabilidad_renuncia
+            df_original['Recomendacion'] = df_original.apply(generar_recomendacion_personalizada, axis=1)
 
             st.success("✅ Predicción completada correctamente")
 
             # ========================
-            # 🔹 Análisis de Alto Riesgo
+            # 🔹 Alerta de alto riesgo
             # ========================
-            high_risk_threshold = 0.70
+            high_risk_threshold = 0.61
             df_high_risk = df_original[df_original['Probabilidad_Renuncia'] > high_risk_threshold]
             count_high_risk = len(df_high_risk)
 
             if count_high_risk > 0:
-                st.warning(f"⚠️ Se detectaron **{count_high_risk} empleados** con alta probabilidad de renuncia (>70%).")
+                st.error(f"🚨 Se detectaron **{count_high_risk} empleados** con ALTA probabilidad de renuncia (>61%).")
             else:
                 st.success("🎉 No se detectaron empleados con alto riesgo de renuncia.")
 
             # ========================
-            # 🔹 Tabla de Top 10 empleados con mayor riesgo
+            # 🔹 Tabla Top 10 empleados
             # ========================
             st.subheader("👥 Top 10 empleados con mayor probabilidad de renuncia")
 
             df_top10 = df_original.sort_values(by='Probabilidad_Renuncia', ascending=False).head(10).copy()
 
             def color_prob(val):
-                if val >= 0.8:
-                    color = 'background-color: #ff4d4d; color: white;'
-                elif val >= 0.6:
-                    color = 'background-color: #ffcc00; color: black;'
+                if val > 0.61:
+                    return 'background-color: #ff4d4d; color: white;'  # rojo
+                elif 0.50 <= val <= 0.60:
+                    return 'background-color: #ffcc00; color: black;'  # amarillo
                 else:
-                    color = 'background-color: #70db70; color: black;'
-                return color
+                    return 'background-color: #70db70; color: black;'  # verde
 
             st.dataframe(
-                df_top10[['EmployeeNumber', 'Department', 'JobRole', 'MonthlyIncome', 'Probabilidad_Renuncia']]
+                df_top10[['EmployeeNumber', 'Department', 'JobRole', 'MonthlyIncome', 
+                          'Probabilidad_Renuncia', 'Recomendacion']]
                 .style.applymap(color_prob, subset=['Probabilidad_Renuncia'])
                 .format({'Probabilidad_Renuncia': "{:.2%}"})
             )
 
             # ========================
-            # 🔹 Recomendaciones individuales
+            # 🔹 Promedio por Departamento
             # ========================
-            st.subheader("🔍 Recomendaciones Individuales (Top 10 Riesgo)")
-            for _, row in df_top10.iterrows():
-                with st.expander(f"👁️ Ver recomendación para empleado #{row['EmployeeNumber']} ({row['JobRole']})"):
-                    st.markdown(f"**Probabilidad de renuncia:** {row['Probabilidad_Renuncia']:.2%}")
-                    st.markdown(f"**Departamento:** {row['Department']}")
-                    st.markdown(f"**Ingreso mensual:** ${row['MonthlyIncome']:.2f}")
-                    st.markdown("---")
-                    st.markdown("**Recomendación personalizada:**")
-                    st.write(generar_recomendacion_personalizada(row))
+            st.subheader("🏢 Promedio de probabilidad de renuncia por Departamento")
+            dept_summary = (
+                df_original.groupby('Department')['Probabilidad_Renuncia']
+                .mean()
+                .sort_values(ascending=False)
+                .reset_index()
+            )
+
+            st.bar_chart(dept_summary.set_index('Department'))
 
             # ========================
-            # 🔹 Descarga y análisis global
+            # 🔹 Botón de descarga
             # ========================
             st.download_button(
-                label="⬇️ Descargar Resultados de Predicción (Excel)",
+                label="⬇️ Descargar Resultados (Excel)",
                 data=export_results_to_excel(df_original),
                 file_name="predicciones_resultados.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             )
-
-            display_recommendations(df_original)
 
 
 # ============================

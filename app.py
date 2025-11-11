@@ -39,7 +39,7 @@ def load_model():
 
 
 # ================================
-# 2. Funciones de Preprocesamiento
+# 2. Preprocesamiento
 # ================================
 def preprocess_data(df, model_columns, categorical_mapping, scaler):
     df_processed = df.copy().drop_duplicates()
@@ -69,7 +69,7 @@ def preprocess_data(df, model_columns, categorical_mapping, scaler):
 
 
 # ============================
-# Función de Recomendación
+# 3. Recomendaciones
 # ============================
 def generar_recomendacion_personalizada(row):
     recomendaciones = []
@@ -92,7 +92,7 @@ def generar_recomendacion_personalizada(row):
 
 
 # ============================
-# Función Exportación
+# 4. Exportar resultados
 # ============================
 def export_results_to_excel(df, filename="predicciones_resultados.xlsx"):
     with pd.ExcelWriter(filename, engine='xlsxwriter') as output:
@@ -101,7 +101,7 @@ def export_results_to_excel(df, filename="predicciones_resultados.xlsx"):
 
 
 # ============================
-# 3. Interfaz Streamlit
+# 5. Interfaz Streamlit
 # ============================
 def main():
     st.set_page_config(page_title="Predicción de Renuncia", layout="wide")
@@ -140,28 +140,22 @@ def main():
             df['Prediction_Renuncia'] = (prob > 0.5).astype(int)
             df['Recomendacion'] = df.apply(generar_recomendacion_personalizada, axis=1)
 
-            # ALERTA PRINCIPAL
-            high_risk = df[df['Probabilidad_Renuncia'] > 0.61]
-            if len(high_risk) > 0:
-                st.error(f"🚨 Se detectaron **{len(high_risk)} empleados** con ALTA probabilidad de renuncia (>61%).")
-            else:
-                st.success("🎉 No se detectaron empleados con alto riesgo.")
-
-            # ============================
-            # SEMAFORIZACIÓN MEJORADA
-            # ============================
+            # SEMAFORIZACIÓN por umbrales nuevos
             def color_prob(val):
-                if val > 0.61:
-                    return 'background-color: #F28B82; color: black;'  # rojo suave
-                elif 0.50 <= val <= 0.60:
-                    return 'background-color: #FFF4A3; color: black;'  # amarillo pastel
+                if val > 0.50:
+                    return 'background-color: #F28B82; color:black;'  # rojo suave
+                elif 0.40 <= val <= 0.50:
+                    return 'background-color: #FFF4A3; color:black;'  # amarillo pastel
                 else:
-                    return 'background-color: #B7E1CD; color: black;'  # verde pastel
+                    return 'background-color: #B7E1CD; color:black;'  # verde suave
 
             st.subheader("👥 Top 10 empleados con mayor probabilidad de renuncia")
             df_top10 = df.sort_values('Probabilidad_Renuncia', ascending=False).head(10).copy()
 
-            # Mostrar tabla
+            # Estado del empleado seleccionado
+            if "empleado_sel" not in st.session_state:
+                st.session_state.empleado_sel = None
+
             for i, row in df_top10.iterrows():
                 col1, col2, col3, col4, col5, col6 = st.columns([1.2, 1.2, 1.5, 1.2, 1, 1])
                 with col1:
@@ -176,32 +170,42 @@ def main():
                     color = color_prob(row['Probabilidad_Renuncia'])
                     st.markdown(f"<div style='{color}; text-align:center; border-radius:8px; padding:4px;'>{row['Probabilidad_Renuncia']:.2%}</div>", unsafe_allow_html=True)
                 with col6:
-                    if st.button(f"👁️ Ver", key=f"rec_{i}"):
-                        st.markdown(f"""
-                            <div style="
-                                background-color:white;
-                                border:2px solid #ccc;
-                                border-radius:10px;
-                                padding:20px;
-                                position:fixed;
-                                top:25%;
-                                left:30%;
-                                width:40%;
-                                box-shadow:0 0 15px rgba(0,0,0,0.3);
-                                z-index:9999;">
-                                <h4>💬 Recomendaciones para el empleado {row['EmployeeNumber']}</h4>
-                                <p style='font-size:15px;'>{row['Recomendacion']}</p>
-                                <br>
-                                <p style='text-align:center;'><strong>Cierra la ventana para continuar.</strong></p>
-                            </div>
-                        """, unsafe_allow_html=True)
+                    if st.button(f"👁️ Ver", key=f"ver_{i}"):
+                        st.session_state.empleado_sel = i
 
-            # ============================
-            # GRÁFICOS EN UNA SOLA FILA
-            # ============================
+            # Mostrar ventana modal si hay selección
+            if st.session_state.empleado_sel is not None:
+                emp = df_top10.loc[st.session_state.empleado_sel]
+                st.markdown(f"""
+                    <div style="
+                        background-color:white;
+                        border:2px solid #ccc;
+                        border-radius:12px;
+                        padding:20px;
+                        position:fixed;
+                        top:20%;
+                        left:30%;
+                        width:40%;
+                        box-shadow:0 0 20px rgba(0,0,0,0.3);
+                        z-index:9999;">
+                        <h4>💬 Recomendaciones para el empleado {emp['EmployeeNumber']}</h4>
+                        <p style='font-size:15px;'>{emp['Recomendacion']}</p>
+                        <br>
+                        <form action="" method="get">
+                            <input type="submit" value="Cerrar" style="
+                                background-color:#4CAF50;
+                                color:white;
+                                padding:8px 16px;
+                                border:none;
+                                border-radius:6px;
+                                cursor:pointer;">
+                        </form>
+                    </div>
+                """, unsafe_allow_html=True)
+
+            # GRÁFICOS
             st.subheader("📊 Análisis por Departamento y Variables Clave")
             col1, col2 = st.columns(2)
-
             with col1:
                 dept_avg = df.groupby('Department')['Probabilidad_Renuncia'].mean().reset_index()
                 fig_bar = px.bar(dept_avg, x='Department', y='Probabilidad_Renuncia',
@@ -209,16 +213,13 @@ def main():
                                  color_continuous_scale='Reds',
                                  title="Probabilidad promedio por departamento")
                 st.plotly_chart(fig_bar, use_container_width=True)
-
             with col2:
                 fig_pie = px.pie(dept_avg, names='Department', values='Probabilidad_Renuncia',
                                  color_discrete_sequence=px.colors.qualitative.Pastel,
                                  hole=0.4, title="Distribución total por departamento")
                 st.plotly_chart(fig_pie, use_container_width=True)
 
-            # ============================
             # DESCARGA
-            # ============================
             st.download_button(
                 "⬇️ Descargar resultados (Excel)",
                 data=export_results_to_excel(df),
@@ -232,6 +233,7 @@ def main():
 # ============================
 if __name__ == "__main__":
     main()
+
 
 
 

@@ -13,7 +13,6 @@ def load_model():
         model = joblib.load('models/xgboost_model.pkl')
         categorical_mapping = joblib.load('models/categorical_mapping.pkl')
         scaler = joblib.load('models/scaler.pkl')
-
         st.success("✅ Modelo y artefactos cargados correctamente.")
         return model, categorical_mapping, scaler
     except Exception as e:
@@ -27,12 +26,16 @@ def load_model():
 def preprocess_data(df, model_columns, categorical_mapping, scaler):
     df_processed = df.copy()
 
-    # Asegurar que todas las columnas estén presentes
+    # --- Asegurar que todas las columnas del modelo existan ---
     for col in model_columns:
         if col not in df_processed.columns:
             df_processed[col] = np.nan
 
-    # Normalización y mapeo de variables categóricas
+    # --- Rellenar numéricas ---
+    numeric_cols = df_processed.select_dtypes(include=np.number).columns.tolist()
+    df_processed[numeric_cols] = df_processed[numeric_cols].fillna(df_processed[numeric_cols].mean())
+
+    # --- Categóricas ---
     categorical_cols = [
         'BusinessTravel', 'Department', 'EducationField', 'Gender', 'JobRole',
         'MaritalStatus', 'OverTime'
@@ -44,14 +47,12 @@ def preprocess_data(df, model_columns, categorical_mapping, scaler):
                 df_processed[col] = df_processed[col].map(categorical_mapping[col])
             df_processed[col] = df_processed[col].fillna(-1)
 
-    # Rellenar numéricos y escalar
-    numeric_cols = [col for col in model_columns if col not in categorical_cols]
-    df_processed[numeric_cols] = df_processed[numeric_cols].fillna(0)
-
+    # --- Escalado ---
     try:
-        df_processed[model_columns] = scaler.transform(df_processed[model_columns])
+        present_cols = [c for c in model_columns if c in df_processed.columns]
+        df_processed[present_cols] = scaler.transform(df_processed[present_cols])
     except Exception as e:
-        st.error(f"Error al escalar los datos: {e}")
+        st.error(f"⚠️ Error al escalar datos: {e}")
         return None
 
     return df_processed[model_columns]
@@ -112,18 +113,15 @@ def main():
         'ConfianzaEmpresa','NumeroTardanzas','NumeroFaltas'
     ]
 
-    # ==========================
-    # 🔹 Pestañas principales
-    # ==========================
     tab1, tab2 = st.tabs(["📂 Predicción desde archivo", "🧮 Simulación manual"])
 
-    # === TAB 1: ARCHIVO ===
+    # === TAB 1 ===
     with tab1:
         uploaded_file = st.file_uploader("📂 Sube tu archivo CSV o Excel", type=["csv", "xlsx"])
         if uploaded_file:
             try:
                 df = pd.read_csv(uploaded_file) if uploaded_file.name.endswith('.csv') else pd.read_excel(uploaded_file)
-                st.info(f"✅ Archivo cargado correctamente. Filas: **{len(df)}** | Columnas: **{df.shape[1]}**")
+                st.info(f"✅ Archivo cargado: {len(df)} registros, {df.shape[1]} columnas.")
                 st.dataframe(df.head())
             except Exception as e:
                 st.error(f"Error al leer archivo: {e}")
@@ -144,36 +142,63 @@ def main():
 
             total_altos = (df["Probabilidad_Renuncia"] > 0.5).sum()
             if total_altos > 0:
-                st.error(f"🔴 **ALERTA:** {total_altos} empleados ({total_altos/len(df):.1%}) tienen probabilidad > 50%.")
+                st.error(f"🔴 {total_altos} empleados ({total_altos/len(df):.1%}) con probabilidad > 50%.")
             else:
                 st.success("🟢 Ningún empleado supera el 50% de probabilidad de renuncia.")
 
             st.subheader("👥 Top 10 empleados con mayor probabilidad de renuncia")
-            st.markdown("---")
-
             df_top10 = df.sort_values('Probabilidad_Renuncia', ascending=False).head(10)
+
+            def color_prob(val):
+                if val >= 0.5:
+                    return 'background-color:#FFCDD2; color:black; font-weight:bold;'
+                elif 0.4 <= val < 0.5:
+                    return 'background-color:#FFF59D; color:black;'
+                else:
+                    return 'background-color:#C8E6C9; color:black;'
+
             for i, row in df_top10.iterrows():
                 col1, col2, col3, col4, col5, col6 = st.columns([1.2, 1.5, 1.8, 1.5, 1, 1])
-                with col1: st.write(f"**{row['EmployeeNumber']}**")
-                with col2: st.write(row['Department'])
-                with col3: st.write(row['JobRole'])
-                with col4: st.write(f"S/. {row['MonthlyIncome']:,.2f}")
+                with col1: st.write(f"**{row.get('EmployeeNumber', i+1)}**")
+                with col2: st.write(row.get('Department', '-'))
+                with col3: st.write(row.get('JobRole', '-'))
+                with col4: st.write(f"S/. {row.get('MonthlyIncome', 0):,.2f}")
                 with col5:
-                    color = "#FFCDD2" if row['Probabilidad_Renuncia'] >= 0.5 else "#C8E6C9"
-                    st.markdown(
-                        f"<div style='background-color:{color}; text-align:center; border-radius:8px; padding:4px;'>{row['Probabilidad_Renuncia']:.1%}</div>",
-                        unsafe_allow_html=True)
+                    st.markdown(f"<div style='{color_prob(row['Probabilidad_Renuncia'])}; text-align:center; border-radius:8px; padding:4px;'>{row['Probabilidad_Renuncia']:.1%}</div>", unsafe_allow_html=True)
                 with col6:
                     with st.popover("🔍 Ver"):
                         st.markdown("### 🧭 Recomendaciones")
-                        for rec in row["Recomendacion"].split(" | "):
+                        recs = [r.strip() for r in row["Recomendacion"].split(" | ") if r.strip()]
+                        for rec in recs:
                             st.write(f"- {rec}")
 
-    # === TAB 2: SIMULACIÓN MANUAL ===
-    with tab2:
-        st.subheader("🧮 Simulación manual de un empleado")
-        st.write("Completa los campos para predecir la probabilidad de renuncia de un empleado específico:")
+            st.subheader("📊 Análisis por Departamento")
+            dept_avg = df.groupby('Department')['Probabilidad_Renuncia'].mean().reset_index()
 
+            col1, col2 = st.columns(2)
+            with col1:
+                fig_bar = px.bar(dept_avg, x='Department', y='Probabilidad_Renuncia',
+                                 color='Probabilidad_Renuncia', text_auto='.1%',
+                                 color_continuous_scale=['#8BC34A','#FFEB3B','#E57373'],
+                                 title="Probabilidad Promedio por Departamento")
+                st.plotly_chart(fig_bar, use_container_width=True)
+            with col2:
+                fig_pie = px.pie(dept_avg, names='Department', values='Probabilidad_Renuncia',
+                                 hole=0.4, title="Distribución de Probabilidades por Departamento")
+                st.plotly_chart(fig_pie, use_container_width=True)
+
+            st.subheader("📥 Descargar Resultados")
+            excel_data = export_results_to_excel(df)
+            st.download_button(
+                label="⬇️ Descargar reporte Excel",
+                data=excel_data,
+                file_name="predicciones_resultados.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            )
+
+    # === TAB 2 ===
+    with tab2:
+        st.subheader("🧮 Simulación manual")
         col1, col2 = st.columns(2)
         with col1:
             Age = st.number_input("Edad", 18, 65, 30)
@@ -192,31 +217,18 @@ def main():
             NumeroFaltas = st.number_input("Número de faltas", 0, 10, 0)
 
         if st.button("🔮 Predecir", use_container_width=True):
-            # Crear registro con todas las columnas del modelo
-            input_data = {col: np.nan for col in model_columns}
-            input_data.update({
-                'Age': Age,
-                'Gender': Gender,
-                'Department': Department,
-                'JobRole': JobRole,
-                'MonthlyIncome': MonthlyIncome,
-                'BusinessTravel': BusinessTravel,
-                'OverTime': OverTime,
-                'IntencionPermanencia': IntencionPermanencia,
-                'CargaLaboralPercibida': CargaLaboralPercibida,
-                'SatisfaccionSalarial': SatisfaccionSalarial,
-                'ConfianzaEmpresa': ConfianzaEmpresa,
-                'NumeroTardanzas': NumeroTardanzas,
-                'NumeroFaltas': NumeroFaltas
-            })
+            input_data = pd.DataFrame([{
+                'Age': Age, 'Gender': Gender, 'Department': Department, 'JobRole': JobRole,
+                'MonthlyIncome': MonthlyIncome, 'BusinessTravel': BusinessTravel, 'OverTime': OverTime,
+                'IntencionPermanencia': IntencionPermanencia, 'CargaLaboralPercibida': CargaLaboralPercibida,
+                'SatisfaccionSalarial': SatisfaccionSalarial, 'ConfianzaEmpresa': ConfianzaEmpresa,
+                'NumeroTardanzas': NumeroTardanzas, 'NumeroFaltas': NumeroFaltas
+            }])
 
-            df_input = pd.DataFrame([input_data])
-            processed_input = preprocess_data(df_input, model_columns, categorical_mapping, scaler)
-
+            processed_input = preprocess_data(input_data, model_columns, categorical_mapping, scaler)
             if processed_input is not None:
                 prob = model.predict_proba(processed_input)[:, 1][0]
-                recomendacion = generar_recomendacion_personalizada(df_input.iloc[0])
-
+                recomendacion = generar_recomendacion_personalizada(input_data.iloc[0])
                 st.markdown(f"""
                     <div style='background-color:#f0f2f6; padding:20px; border-radius:10px; text-align:center;'>
                         <h3>🔎 Resultado de la simulación</h3>
@@ -229,6 +241,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 

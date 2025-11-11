@@ -160,7 +160,7 @@ def main():
             with col5:
                 st.markdown(f"<div style='{color_prob(row['Probabilidad_Renuncia'])}; text-align:center; border-radius:8px; padding:4px;'>{row['Probabilidad_Renuncia']:.1%}</div>", unsafe_allow_html=True)
             with col6:
-                with st.popover("👁️ Ver detalles", use_container_width=True):
+                with st.popover("👁️ Ver detalles"):
                     st.markdown(f"**Empleado {row['EmployeeNumber']}** — Probabilidad: {row['Probabilidad_Renuncia']:.1%}")
                     st.markdown("### 🧭 Recomendaciones:")
                     recs = row["Recomendacion"].split(" | ")

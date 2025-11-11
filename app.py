@@ -108,101 +108,152 @@ def main():
         'ConfianzaEmpresa','NumeroTardanzas','NumeroFaltas'
     ]
 
-    uploaded_file = st.file_uploader("📂 Sube tu archivo CSV o Excel", type=["csv", "xlsx"])
-    if uploaded_file:
-        try:
-            df = pd.read_csv(uploaded_file) if uploaded_file.name.endswith('.csv') else pd.read_excel(uploaded_file)
-            st.info(f"✅ Archivo cargado correctamente. Filas: **{len(df)}** | Columnas: **{df.shape[1]}**")
-            st.dataframe(df.head())
-        except Exception as e:
-            st.error(f"Error al leer archivo: {e}")
-            return
+    # ==========================
+    # 🔹 Pestañas principales
+    # ==========================
+    tab1, tab2 = st.tabs(["📂 Predicción desde archivo", "🧮 Simulación manual"])
 
-        if st.button("🚀 Ejecutar Predicción", use_container_width=True):
-            processed = preprocess_data(df.drop(columns=['Attrition'], errors='ignore'), model_columns, categorical_mapping, scaler)
-            if processed is None:
+    # === TAB 1: ARCHIVO ===
+    with tab1:
+        uploaded_file = st.file_uploader("📂 Sube tu archivo CSV o Excel", type=["csv", "xlsx"])
+        if uploaded_file:
+            try:
+                df = pd.read_csv(uploaded_file) if uploaded_file.name.endswith('.csv') else pd.read_excel(uploaded_file)
+                st.info(f"✅ Archivo cargado correctamente. Filas: **{len(df)}** | Columnas: **{df.shape[1]}**")
+                st.dataframe(df.head())
+            except Exception as e:
+                st.error(f"Error al leer archivo: {e}")
                 return
-            prob = model.predict_proba(processed)[:, 1]
-            df['Probabilidad_Renuncia'] = prob
-            df['Prediction_Renuncia'] = (prob > 0.5).astype(int)
-            df['Recomendacion'] = df.apply(generar_recomendacion_personalizada, axis=1)
-            st.session_state.df_resultados = df
 
-    if "df_resultados" in st.session_state:
-        df = st.session_state.df_resultados
+            if st.button("🚀 Ejecutar Predicción", use_container_width=True):
+                processed = preprocess_data(df.drop(columns=['Attrition'], errors='ignore'), model_columns, categorical_mapping, scaler)
+                if processed is None:
+                    return
+                prob = model.predict_proba(processed)[:, 1]
+                df['Probabilidad_Renuncia'] = prob
+                df['Prediction_Renuncia'] = (prob > 0.5).astype(int)
+                df['Recomendacion'] = df.apply(generar_recomendacion_personalizada, axis=1)
+                st.session_state.df_resultados = df
 
-        # === ALERTA general ===
-        total_altos = (df["Probabilidad_Renuncia"] > 0.5).sum()
-        if total_altos > 0:
-            st.error(f"🔴 **ALERTA:** {total_altos} empleados ({total_altos/len(df):.1%}) tienen probabilidad > 50%.")
-        else:
-            st.success("🟢 Ningún empleado supera el 50% de probabilidad de renuncia.")
+        if "df_resultados" in st.session_state:
+            df = st.session_state.df_resultados
 
-        # === TABLA PRINCIPAL ===
-        st.subheader("👥 Top 10 empleados con mayor probabilidad de renuncia")
-        st.markdown("---")
-
-        def color_prob(val):
-            if val >= 0.5:
-                return 'background-color:#FFCDD2; color:black; font-weight:bold;'
-            elif 0.4 <= val < 0.5:
-                return 'background-color:#FFF59D; color:black;'
+            total_altos = (df["Probabilidad_Renuncia"] > 0.5).sum()
+            if total_altos > 0:
+                st.error(f"🔴 **ALERTA:** {total_altos} empleados ({total_altos/len(df):.1%}) tienen probabilidad > 50%.")
             else:
-                return 'background-color:#C8E6C9; color:black;'
+                st.success("🟢 Ningún empleado supera el 50% de probabilidad de renuncia.")
 
-        df_top10 = df.sort_values('Probabilidad_Renuncia', ascending=False).head(10)
-        for i, row in df_top10.iterrows():
-            col1, col2, col3, col4, col5, col6 = st.columns([1.2, 1.5, 1.8, 1.5, 1, 1])
-            with col1: st.write(f"**{row['EmployeeNumber']}**")
-            with col2: st.write(row['Department'])
-            with col3: st.write(row['JobRole'])
-            with col4: st.write(f"S/. {row['MonthlyIncome']:,.2f}")
-            with col5:
-                st.markdown(f"<div style='{color_prob(row['Probabilidad_Renuncia'])}; text-align:center; border-radius:8px; padding:4px;'>{row['Probabilidad_Renuncia']:.1%}</div>", unsafe_allow_html=True)
-            with col6:
-                with st.popover("🔍 Ver", help="Haz clic para ver las recomendaciones"):
+            st.subheader("👥 Top 10 empleados con mayor probabilidad de renuncia")
+            st.markdown("---")
 
-                    with st.container(border=True):
-                        st.markdown("### 🧭 Recomendaciones")
+            def color_prob(val):
+                if val >= 0.5:
+                    return 'background-color:#FFCDD2; color:black; font-weight:bold;'
+                elif 0.4 <= val < 0.5:
+                    return 'background-color:#FFF59D; color:black;'
+                else:
+                    return 'background-color:#C8E6C9; color:black;'
 
-                        recs = [r.strip() for r in row["Recomendacion"].split(" | ") if r.strip()]
+            df_top10 = df.sort_values('Probabilidad_Renuncia', ascending=False).head(10)
+            for i, row in df_top10.iterrows():
+                col1, col2, col3, col4, col5, col6 = st.columns([1.2, 1.5, 1.8, 1.5, 1, 1])
+                with col1: st.write(f"**{row['EmployeeNumber']}**")
+                with col2: st.write(row['Department'])
+                with col3: st.write(row['JobRole'])
+                with col4: st.write(f"S/. {row['MonthlyIncome']:,.2f}")
+                with col5:
+                    st.markdown(f"<div style='{color_prob(row['Probabilidad_Renuncia'])}; text-align:center; border-radius:8px; padding:4px;'>{row['Probabilidad_Renuncia']:.1%}</div>", unsafe_allow_html=True)
+                with col6:
+                    with st.popover("🔍 Ver", help="Haz clic para ver las recomendaciones"):
+                        with st.container(border=True):
+                            st.markdown("### 🧭 Recomendaciones")
+                            recs = [r.strip() for r in row["Recomendacion"].split(" | ") if r.strip()]
+                            max_recs = 5
+                            for rec in recs[:max_recs]:
+                                st.write(f"- {rec}")
+                            if len(recs) > max_recs:
+                                st.caption(f"… y {len(recs) - max_recs} más")
+                            st.caption("👆 Haz clic fuera del cuadro para cerrar.")
 
-                        max_recs = 5
-                        for rec in recs[:max_recs]:
-                            st.write(f"- {rec}")
+            st.subheader("📊 Análisis por Departamento")
+            dept_avg = df.groupby('Department')['Probabilidad_Renuncia'].mean().reset_index()
 
-                        if len(recs) > max_recs:
-                            st.caption(f"… y {len(recs) - max_recs} más")
+            col1, col2 = st.columns(2)
+            with col1:
+                fig_bar = px.bar(dept_avg, x='Department', y='Probabilidad_Renuncia',
+                                 color='Probabilidad_Renuncia', text_auto='.1%',
+                                 color_continuous_scale=['#8BC34A','#FFEB3B','#E57373'],
+                                 title="Probabilidad Promedio por Departamento")
+                st.plotly_chart(fig_bar, use_container_width=True)
 
-                        st.caption("👆 Haz clic fuera del cuadro para cerrar.")
+            with col2:
+                fig_pie = px.pie(dept_avg, names='Department', values='Probabilidad_Renuncia',
+                                 hole=0.4, color_discrete_sequence=px.colors.qualitative.Bold,
+                                 title="Distribución de Probabilidades por Departamento")
+                st.plotly_chart(fig_pie, use_container_width=True)
 
-        # === GRÁFICOS ===
-        st.subheader("📊 Análisis por Departamento")
-        dept_avg = df.groupby('Department')['Probabilidad_Renuncia'].mean().reset_index()
+            st.subheader("📥 Descargar Resultados")
+            excel_data = export_results_to_excel(df)
+            st.download_button(
+                label="⬇️ Descargar reporte Excel",
+                data=excel_data,
+                file_name="predicciones_resultados.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            )
+
+    # === TAB 2: SIMULACIÓN MANUAL ===
+    with tab2:
+        st.subheader("🧮 Simulación manual de un empleado")
+        st.write("Completa los campos para predecir la probabilidad de renuncia de un empleado específico:")
 
         col1, col2 = st.columns(2)
         with col1:
-            fig_bar = px.bar(dept_avg, x='Department', y='Probabilidad_Renuncia',
-                             color='Probabilidad_Renuncia', text_auto='.1%',
-                             color_continuous_scale=['#8BC34A','#FFEB3B','#E57373'],
-                             title="Probabilidad Promedio por Departamento")
-            st.plotly_chart(fig_bar, use_container_width=True)
-
+            Age = st.number_input("Edad", 18, 65, 30)
+            Gender = st.selectbox("Género", ["M", "F"])
+            Department = st.selectbox("Departamento", ["VENTAS", "RRHH", "TECNOLOGÍA", "FINANZAS"])
+            JobRole = st.text_input("Puesto de trabajo", "Analista")
+            MonthlyIncome = st.number_input("Ingreso mensual (S/.)", 1000, 20000, 3500)
+            BusinessTravel = st.selectbox("Frecuencia de viaje", ["NUNCA", "RARA VEZ", "FRECUENTE"])
+            OverTime = st.selectbox("¿Hace horas extra?", ["SI", "NO"])
         with col2:
-            fig_pie = px.pie(dept_avg, names='Department', values='Probabilidad_Renuncia',
-                             hole=0.4, color_discrete_sequence=px.colors.qualitative.Bold,
-                             title="Distribución de Probabilidades por Departamento")
-            st.plotly_chart(fig_pie, use_container_width=True)
+            IntencionPermanencia = st.slider("Intención de permanencia (1-5)", 1, 5, 3)
+            CargaLaboralPercibida = st.slider("Carga laboral percibida (1-5)", 1, 5, 3)
+            SatisfaccionSalarial = st.slider("Satisfacción salarial (1-5)", 1, 5, 3)
+            ConfianzaEmpresa = st.slider("Confianza en la empresa (1-5)", 1, 5, 3)
+            NumeroTardanzas = st.number_input("Número de tardanzas", 0, 20, 0)
+            NumeroFaltas = st.number_input("Número de faltas", 0, 10, 0)
 
-        # === DESCARGA ===
-        st.subheader("📥 Descargar Resultados")
-        excel_data = export_results_to_excel(df)
-        st.download_button(
-            label="⬇️ Descargar reporte Excel",
-            data=excel_data,
-            file_name="predicciones_resultados.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        )
+        if st.button("🔮 Predecir", use_container_width=True):
+            input_data = pd.DataFrame([{
+                'Age': Age,
+                'Gender': Gender,
+                'Department': Department,
+                'JobRole': JobRole,
+                'MonthlyIncome': MonthlyIncome,
+                'BusinessTravel': BusinessTravel,
+                'OverTime': OverTime,
+                'IntencionPermanencia': IntencionPermanencia,
+                'CargaLaboralPercibida': CargaLaboralPercibida,
+                'SatisfaccionSalarial': SatisfaccionSalarial,
+                'ConfianzaEmpresa': ConfianzaEmpresa,
+                'NumeroTardanzas': NumeroTardanzas,
+                'NumeroFaltas': NumeroFaltas
+            }])
+
+            processed_input = preprocess_data(input_data, model_columns, categorical_mapping, scaler)
+            if processed_input is not None:
+                prob = model.predict_proba(processed_input)[:, 1][0]
+                recomendacion = generar_recomendacion_personalizada(input_data.iloc[0])
+
+                st.markdown(f"""
+                    <div style='background-color:#f0f2f6; padding:20px; border-radius:10px; text-align:center;'>
+                        <h3>🔎 Resultado de la simulación</h3>
+                        <p style='font-size:20px;'>Probabilidad de renuncia: 
+                        <b style='color:{"red" if prob>0.5 else "green"}'>{prob:.1%}</b></p>
+                        <p><b>Recomendación:</b> {recomendacion}</p>
+                    </div>
+                """, unsafe_allow_html=True)
 
 
 if __name__ == "__main__":

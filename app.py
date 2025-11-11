@@ -128,8 +128,8 @@ def main():
         df = st.session_state.df_resultados
 
         # ==== ALERTA general ====
-        total_altos = (df["Probabilidad_Renuncia"] > 0.6).sum()
-        st.warning(f"⚠️ {total_altos} empleados presentan una probabilidad de renuncia superior al 60%.")
+        total_altos = (df["Probabilidad_Renuncia"] > 0.5).sum()
+        st.error(f"🔴 {total_altos} empleados presentan una probabilidad de renuncia superior al 50%.")
 
         # ==== Gráficos ====
         st.subheader("📊 Análisis general por departamento")
@@ -184,7 +184,7 @@ def main():
                 if st.button("👁️ Ver", key=f"ver_{i}"):
                     st.session_state.selected_emp = i
 
-        # ==== MODAL flotante ====
+        # ==== MODAL flotante mejorado ====
         if st.session_state.get("selected_emp") is not None:
             empleado = df_top10.loc[st.session_state.selected_emp]
 
@@ -194,7 +194,7 @@ def main():
                     .modal-background {{
                         position: fixed;
                         top: 0; left: 0; width: 100%; height: 100%;
-                        background-color: rgba(0, 0, 0, 0.5);
+                        background-color: rgba(0, 0, 0, 0.6);
                         display: flex; justify-content: center; align-items: center;
                         z-index: 1000;
                     }}
@@ -205,10 +205,21 @@ def main():
                         width: 60%;
                         max-width: 700px;
                         box-shadow: 0 4px 25px rgba(0,0,0,0.3);
+                        position: relative;
+                    }}
+                    .close-button {{
+                        position: absolute;
+                        top: 10px;
+                        right: 15px;
+                        font-size: 18px;
+                        font-weight: bold;
+                        color: #666;
+                        cursor: pointer;
                     }}
                 </style>
-                <div class="modal-background">
-                    <div class="modal-content">
+                <div class="modal-background" onclick="window.parent.postMessage('close_modal', '*')">
+                    <div class="modal-content" onclick="event.stopPropagation()">
+                        <div class="close-button" onclick="window.parent.postMessage('close_modal', '*')">✖</div>
                         <h4>💬 Recomendaciones para el empleado {empleado['EmployeeNumber']}</h4>
                         <p style='font-size:15px; text-align:justify;'>{empleado["Recomendacion"]}</p>
                     </div>
@@ -217,7 +228,19 @@ def main():
                 unsafe_allow_html=True
             )
 
-            if st.button("❌ Cerrar ventana"):
+            # Detectar cierre (con JS event)
+            js = """
+            <script>
+            window.addEventListener("message", (event) => {
+                if (event.data === "close_modal") {
+                    window.parent.postMessage("rerun_app", "*");
+                }
+            });
+            </script>
+            """
+            st.components.v1.html(js, height=0)
+
+            if st.button("❌ Cerrar ventana manualmente"):
                 st.session_state.selected_emp = None
                 st.rerun()
 
@@ -233,11 +256,9 @@ def main():
             )
 
 
-# ============================
-# Ejecutar
-# ============================
 if __name__ == "__main__":
     main()
+
 
 
 

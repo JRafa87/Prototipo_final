@@ -5,7 +5,6 @@ import streamlit as st
 import os
 from sklearn.preprocessing import MinMaxScaler
 import plotly.express as px
-import plotly.graph_objects as go
 
 # ==========================
 # 1. Cargar Modelos y Artefactos
@@ -141,39 +140,64 @@ def main():
             df['Prediction_Renuncia'] = (prob > 0.5).astype(int)
             df['Recomendacion'] = df.apply(generar_recomendacion_personalizada, axis=1)
 
-            # ALERTA PRINCIPAL (en rojo)
-            high_risk = df[df['Probabilidad_Renuncia'] > 0.5]
+            # ALERTA PRINCIPAL
+            high_risk = df[df['Probabilidad_Renuncia'] > 0.61]
             if len(high_risk) > 0:
-                st.error(f"🚨 Se detectaron **{len(high_risk)} empleados** con ALTA probabilidad de renuncia (>50%).")
+                st.error(f"🚨 Se detectaron **{len(high_risk)} empleados** con ALTA probabilidad de renuncia (>61%).")
             else:
                 st.success("🎉 No se detectaron empleados con alto riesgo.")
 
-            # SEMAFORIZACIÓN CON NUEVOS RANGOS
+            # ============================
+            # SEMAFORIZACIÓN MEJORADA
+            # ============================
             def color_prob(val):
                 if val > 0.61:
-                    return 'background-color: #FF4D4D; color: white;'  # rojo fuerte
+                    return 'background-color: #F28B82; color: black;'  # rojo suave
                 elif 0.50 <= val <= 0.60:
-                    return 'background-color: #FFD966; color: black;'  # amarillo
+                    return 'background-color: #FFF4A3; color: black;'  # amarillo pastel
                 else:
-                    return 'background-color: #93C47D; color: black;'  # verde
+                    return 'background-color: #B7E1CD; color: black;'  # verde pastel
 
-            # Tabla con ícono de ojo y recomendación visible al hacer clic
             st.subheader("👥 Top 10 empleados con mayor probabilidad de renuncia")
             df_top10 = df.sort_values('Probabilidad_Renuncia', ascending=False).head(10).copy()
 
-            # Agregar columna con ícono
-            df_top10['👁️ Ver'] = df_top10.apply(lambda x: f"👁️", axis=1)
-
-            # Mostrar tabla con estilo
-            st.dataframe(
-                df_top10[['EmployeeNumber', 'Department', 'JobRole', 'MonthlyIncome',
-                          'Probabilidad_Renuncia', 'Recomendacion']]
-                .style.applymap(color_prob, subset=['Probabilidad_Renuncia'])
-                .format({'Probabilidad_Renuncia': "{:.2%}"})
-            )
+            # Mostrar tabla
+            for i, row in df_top10.iterrows():
+                col1, col2, col3, col4, col5, col6 = st.columns([1.2, 1.2, 1.5, 1.2, 1, 1])
+                with col1:
+                    st.write(f"**{row['EmployeeNumber']}**")
+                with col2:
+                    st.write(row['Department'])
+                with col3:
+                    st.write(row['JobRole'])
+                with col4:
+                    st.write(f"S/. {row['MonthlyIncome']}")
+                with col5:
+                    color = color_prob(row['Probabilidad_Renuncia'])
+                    st.markdown(f"<div style='{color}; text-align:center; border-radius:8px; padding:4px;'>{row['Probabilidad_Renuncia']:.2%}</div>", unsafe_allow_html=True)
+                with col6:
+                    if st.button(f"👁️ Ver", key=f"rec_{i}"):
+                        st.markdown(f"""
+                            <div style="
+                                background-color:white;
+                                border:2px solid #ccc;
+                                border-radius:10px;
+                                padding:20px;
+                                position:fixed;
+                                top:25%;
+                                left:30%;
+                                width:40%;
+                                box-shadow:0 0 15px rgba(0,0,0,0.3);
+                                z-index:9999;">
+                                <h4>💬 Recomendaciones para el empleado {row['EmployeeNumber']}</h4>
+                                <p style='font-size:15px;'>{row['Recomendacion']}</p>
+                                <br>
+                                <p style='text-align:center;'><strong>Cierra la ventana para continuar.</strong></p>
+                            </div>
+                        """, unsafe_allow_html=True)
 
             # ============================
-            # GRÁFICOS EN LA MISMA FILA
+            # GRÁFICOS EN UNA SOLA FILA
             # ============================
             st.subheader("📊 Análisis por Departamento y Variables Clave")
             col1, col2 = st.columns(2)
@@ -208,6 +232,7 @@ def main():
 # ============================
 if __name__ == "__main__":
     main()
+
 
 
 

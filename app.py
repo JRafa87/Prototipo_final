@@ -4,7 +4,7 @@ import joblib
 import streamlit as st
 import os
 from sklearn.preprocessing import MinMaxScaler
-import matplotlib.pyplot as plt
+import plotly.express as px
 
 # ==========================
 # 1. Cargar Modelos y Artefactos
@@ -33,9 +33,6 @@ def load_model():
         st.success("✅ Modelo y artefactos cargados correctamente.")
         return model, categorical_mapping, scaler, df_reference_features, true_labels_reference
 
-    except FileNotFoundError:
-        st.error("Error: No se encontraron los archivos del modelo (xgboost_model.pkl, categorical_mapping.pkl, scaler.pkl).")
-        return None, None, None, None, None
     except Exception as e:
         st.error(f"Error al cargar artefactos o data de referencia: {e}")
         return None, None, None, None, None
@@ -45,27 +42,25 @@ def load_model():
 # 2. Funciones de Preprocesamiento
 # ================================
 def preprocess_data(df, model_columns, categorical_mapping, scaler):
-    df_processed = df.copy()
-    df_processed = df_processed.drop_duplicates()
-    numeric_cols_for_fillna = df_processed.select_dtypes(include=np.number).columns.tolist()
-    cols_to_fill = list(set(numeric_cols_for_fillna) & set(model_columns))
+    df_processed = df.copy().drop_duplicates()
+    numeric_cols = df_processed.select_dtypes(include=np.number).columns.tolist()
+    cols_to_fill = list(set(numeric_cols) & set(model_columns))
     df_processed[cols_to_fill] = df_processed[cols_to_fill].fillna(df_processed[cols_to_fill].mean())
 
-    nominal_categorical_cols = [
+    categorical_cols = [
         'BusinessTravel', 'Department', 'EducationField', 'Gender', 'JobRole',
         'MaritalStatus', 'OverTime'
     ]
 
-    for col in nominal_categorical_cols:
+    for col in categorical_cols:
         if col in df_processed.columns:
             df_processed[col] = df_processed[col].astype(str).str.strip().str.upper()
             if col in categorical_mapping:
                 df_processed[col] = df_processed[col].map(categorical_mapping[col])
             df_processed[col] = df_processed[col].fillna(categorical_mapping.get(col, {}).get('DESCONOCIDO', -1))
-        
-    df_to_scale = df_processed[model_columns].copy()
+
     try:
-        df_processed[model_columns] = scaler.transform(df_to_scale)
+        df_processed[model_columns] = scaler.transform(df_processed[model_columns])
     except Exception as e:
         st.error(f"Error al escalar los datos: {e}")
         return None
@@ -93,7 +88,7 @@ def generar_recomendacion_personalizada(row):
     if not recomendaciones:
         recomendaciones.append("Sin alertas relevantes. Mantener seguimiento preventivo.")
 
-    return " | ".join(recomendaciones)
+    return " • ".join(recomendaciones)
 
 
 # ============================
@@ -117,7 +112,7 @@ def main():
     if model is None:
         return
 
-    model_feature_columns = [
+    model_columns = [
         'Age', 'BusinessTravel', 'DailyRate', 'Department', 'DistanceFromHome',
         'Education', 'EducationField', 'EnvironmentSatisfaction', 'Gender', 'HourlyRate',
         'JobInvolvement', 'JobLevel', 'JobRole', 'JobSatisfaction', 'MaritalStatus',
@@ -125,108 +120,89 @@ def main():
         'PerformanceRating', 'RelationshipSatisfaction', 'StockOptionLevel', 'TotalWorkingYears',
         'TrainingTimesLastYear', 'WorkLifeBalance', 'YearsAtCompany', 'YearsInCurrentRole',
         'YearsSinceLastPromotion', 'YearsWithCurrManager',
-        'IntencionPermanencia', 'CargaLaboralPercibida', 'SatisfaccionSalarial', 
-        'ConfianzaEmpresa', 'NumeroTardanzas', 'NumeroFaltas' 
+        'IntencionPermanencia', 'CargaLaboralPercibida', 'SatisfaccionSalarial',
+        'ConfianzaEmpresa', 'NumeroTardanzas', 'NumeroFaltas'
     ]
 
-    uploaded_file = st.file_uploader("📂 Sube un archivo CSV o Excel (.csv, .xlsx)", type=["csv", "xlsx"])
-    
+    uploaded_file = st.file_uploader("📂 Sube un archivo CSV o Excel", type=["csv", "xlsx"])
     if uploaded_file is not None:
-        try:
-            if uploaded_file.name.endswith('.csv'):
-                df = pd.read_csv(uploaded_file)
-            else:
-                df = pd.read_excel(uploaded_file)
-            st.info(f"✅ Archivo cargado correctamente. Total de filas: {len(df)}")
-            st.dataframe(df.head())
-        except Exception as e:
-            st.error(f"Error al leer el archivo: {e}")
-            return
+        df = pd.read_csv(uploaded_file) if uploaded_file.name.endswith('.csv') else pd.read_excel(uploaded_file)
+        st.info(f"✅ Archivo cargado correctamente. Total de filas: {len(df)}")
+        st.dataframe(df.head())
 
-        df_original = df.copy()
-        df_features_uploaded = df_original.drop(columns=['Attrition'], errors='ignore').copy()
-        processed_df = preprocess_data(df_features_uploaded, model_feature_columns, categorical_mapping, scaler)
-        
+        processed_df = preprocess_data(df.drop(columns=['Attrition'], errors='ignore'), model_columns, categorical_mapping, scaler)
         if processed_df is None:
-            st.error("❌ Error de preprocesamiento. Verifica tus datos.")
             return
 
-        st.header("1️⃣ Predicción de Renuncia")
-        
         if st.button("🚀 Ejecutar Predicción"):
-            st.info("Ejecutando modelo...")
+            prob = model.predict_proba(processed_df)[:, 1]
+            df['Probabilidad_Renuncia'] = prob
+            df['Prediction_Renuncia'] = (prob > 0.5).astype(int)
+            df['Recomendacion'] = df.apply(generar_recomendacion_personalizada, axis=1)
 
-            probabilidad_renuncia = model.predict_proba(processed_df)[:, 1]
-            predictions = (probabilidad_renuncia > 0.5).astype(int)
-            df_original['Prediction_Renuncia'] = predictions
-            df_original['Probabilidad_Renuncia'] = probabilidad_renuncia
-            df_original['Recomendacion'] = df_original.apply(generar_recomendacion_personalizada, axis=1)
-
-            st.success("✅ Predicción completada correctamente")
-
-            # ========================
-            # 🔹 Alerta de alto riesgo
-            # ========================
-            high_risk_threshold = 0.61
-            df_high_risk = df_original[df_original['Probabilidad_Renuncia'] > high_risk_threshold]
-            count_high_risk = len(df_high_risk)
-
-            if count_high_risk > 0:
-                st.error(f"🚨 Se detectaron **{count_high_risk} empleados** con ALTA probabilidad de renuncia (>61%).")
+            # ALERTA PRINCIPAL
+            high_risk = df[df['Probabilidad_Renuncia'] > 0.5]
+            if len(high_risk) > 0:
+                st.error(f"🚨 Se detectaron **{len(high_risk)} empleados** con ALTA probabilidad de renuncia (>50%).")
             else:
-                st.success("🎉 No se detectaron empleados con alto riesgo de renuncia.")
+                st.success("🎉 No se detectaron empleados con alto riesgo.")
 
-            # ========================
-            # 🔹 Tabla Top 10 empleados
-            # ========================
-            st.subheader("👥 Top 10 empleados con mayor probabilidad de renuncia")
-
-            df_top10 = df_original.sort_values(by='Probabilidad_Renuncia', ascending=False).head(10).copy()
-
+            # SEMAFORIZACIÓN SUAVIZADA
             def color_prob(val):
-                if val > 0.61:
-                    return 'background-color: #ff4d4d; color: white;'  # rojo
-                elif 0.50 <= val <= 0.60:
-                    return 'background-color: #ffcc00; color: black;'  # amarillo
+                if val > 0.5:
+                    return 'background-color: #FF9999; color: black;'  # rojo pastel
+                elif 0.4 <= val <= 0.5:
+                    return 'background-color: #FFE699; color: black;'  # amarillo pastel
                 else:
-                    return 'background-color: #70db70; color: black;'  # verde
+                    return 'background-color: #B6D7A8; color: black;'  # verde pastel
 
+            st.subheader("👥 Top 10 empleados con mayor probabilidad de renuncia")
+            df_top10 = df.sort_values('Probabilidad_Renuncia', ascending=False).head(10)
             st.dataframe(
-                df_top10[['EmployeeNumber', 'Department', 'JobRole', 'MonthlyIncome', 
-                          'Probabilidad_Renuncia', 'Recomendacion']]
+                df_top10[['EmployeeNumber', 'Department', 'JobRole', 'MonthlyIncome', 'Probabilidad_Renuncia']]
                 .style.applymap(color_prob, subset=['Probabilidad_Renuncia'])
                 .format({'Probabilidad_Renuncia': "{:.2%}"})
             )
 
-            # ========================
-            # 🔹 Promedio por Departamento
-            # ========================
-            st.subheader("🏢 Promedio de probabilidad de renuncia por Departamento")
-            dept_summary = (
-                df_original.groupby('Department')['Probabilidad_Renuncia']
-                .mean()
-                .sort_values(ascending=False)
-                .reset_index()
-            )
+            # RECOMENDACIONES EN MODAL
+            with st.expander("💬 Ver recomendaciones personalizadas"):
+                st.write(df_top10[['EmployeeNumber', 'JobRole', 'Recomendacion']])
 
-            st.bar_chart(dept_summary.set_index('Department'))
+            # GRÁFICO PIE POR DEPARTAMENTO
+            st.subheader("🏢 Distribución de probabilidad promedio por departamento (%)")
+            dept_avg = df.groupby('Department')['Probabilidad_Renuncia'].mean().reset_index()
+            dept_avg['Porcentaje'] = 100 * dept_avg['Probabilidad_Renuncia'] / dept_avg['Probabilidad_Renuncia'].sum()
+            fig_pie = px.pie(dept_avg, names='Department', values='Porcentaje',
+                             color_discrete_sequence=px.colors.qualitative.Pastel,
+                             hole=0.4, title="Distribución total (100%)")
+            st.plotly_chart(fig_pie, use_container_width=True)
 
-            # ========================
-            # 🔹 Botón de descarga
-            # ========================
+            # GRÁFICO DE IMPORTANCIA DE VARIABLES
+            if hasattr(model, "feature_importances_"):
+                st.subheader("📈 Variables con mayor influencia en la predicción")
+                feat_imp = pd.DataFrame({
+                    'Variable': model_columns,
+                    'Importancia': model.feature_importances_
+                }).sort_values(by='Importancia', ascending=False).head(10)
+                fig_bar = px.bar(feat_imp, x='Importancia', y='Variable', orientation='h',
+                                 color='Importancia', color_continuous_scale='Peach')
+                st.plotly_chart(fig_bar, use_container_width=True)
+
+            # DESCARGA
             st.download_button(
-                label="⬇️ Descargar Resultados (Excel)",
-                data=export_results_to_excel(df_original),
+                "⬇️ Descargar resultados (Excel)",
+                data=export_results_to_excel(df),
                 file_name="predicciones_resultados.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             )
 
 
 # ============================
-#  Inicio de la Aplicación
+# Inicio
 # ============================
 if __name__ == "__main__":
     main()
+
 
 
 

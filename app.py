@@ -5,6 +5,7 @@ import streamlit as st
 import os
 from sklearn.preprocessing import MinMaxScaler
 import plotly.express as px
+import plotly.graph_objects as go
 
 # ==========================
 # 1. Cargar Modelos y Artefactos
@@ -88,7 +89,7 @@ def generar_recomendacion_personalizada(row):
     if not recomendaciones:
         recomendaciones.append("Sin alertas relevantes. Mantener seguimiento preventivo.")
 
-    return " • ".join(recomendaciones)
+    return " ".join(recomendaciones)
 
 
 # ============================
@@ -140,55 +141,60 @@ def main():
             df['Prediction_Renuncia'] = (prob > 0.5).astype(int)
             df['Recomendacion'] = df.apply(generar_recomendacion_personalizada, axis=1)
 
-            # ALERTA PRINCIPAL
+            # ALERTA PRINCIPAL (en rojo)
             high_risk = df[df['Probabilidad_Renuncia'] > 0.5]
             if len(high_risk) > 0:
                 st.error(f"🚨 Se detectaron **{len(high_risk)} empleados** con ALTA probabilidad de renuncia (>50%).")
             else:
                 st.success("🎉 No se detectaron empleados con alto riesgo.")
 
-            # SEMAFORIZACIÓN SUAVIZADA
+            # SEMAFORIZACIÓN CON NUEVOS RANGOS
             def color_prob(val):
-                if val > 0.5:
-                    return 'background-color: #FF9999; color: black;'  # rojo pastel
-                elif 0.4 <= val <= 0.5:
-                    return 'background-color: #FFE699; color: black;'  # amarillo pastel
+                if val > 0.61:
+                    return 'background-color: #FF4D4D; color: white;'  # rojo fuerte
+                elif 0.50 <= val <= 0.60:
+                    return 'background-color: #FFD966; color: black;'  # amarillo
                 else:
-                    return 'background-color: #B6D7A8; color: black;'  # verde pastel
+                    return 'background-color: #93C47D; color: black;'  # verde
 
+            # Tabla con ícono de ojo y recomendación visible al hacer clic
             st.subheader("👥 Top 10 empleados con mayor probabilidad de renuncia")
-            df_top10 = df.sort_values('Probabilidad_Renuncia', ascending=False).head(10)
+            df_top10 = df.sort_values('Probabilidad_Renuncia', ascending=False).head(10).copy()
+
+            # Agregar columna con ícono
+            df_top10['👁️ Ver'] = df_top10.apply(lambda x: f"👁️", axis=1)
+
+            # Mostrar tabla con estilo
             st.dataframe(
-                df_top10[['EmployeeNumber', 'Department', 'JobRole', 'MonthlyIncome', 'Probabilidad_Renuncia']]
+                df_top10[['EmployeeNumber', 'Department', 'JobRole', 'MonthlyIncome',
+                          'Probabilidad_Renuncia', 'Recomendacion']]
                 .style.applymap(color_prob, subset=['Probabilidad_Renuncia'])
                 .format({'Probabilidad_Renuncia': "{:.2%}"})
             )
 
-            # RECOMENDACIONES EN MODAL
-            with st.expander("💬 Ver recomendaciones personalizadas"):
-                st.write(df_top10[['EmployeeNumber', 'JobRole', 'Recomendacion']])
+            # ============================
+            # GRÁFICOS EN LA MISMA FILA
+            # ============================
+            st.subheader("📊 Análisis por Departamento y Variables Clave")
+            col1, col2 = st.columns(2)
 
-            # GRÁFICO PIE POR DEPARTAMENTO
-            st.subheader("🏢 Distribución de probabilidad promedio por departamento (%)")
-            dept_avg = df.groupby('Department')['Probabilidad_Renuncia'].mean().reset_index()
-            dept_avg['Porcentaje'] = 100 * dept_avg['Probabilidad_Renuncia'] / dept_avg['Probabilidad_Renuncia'].sum()
-            fig_pie = px.pie(dept_avg, names='Department', values='Porcentaje',
-                             color_discrete_sequence=px.colors.qualitative.Pastel,
-                             hole=0.4, title="Distribución total (100%)")
-            st.plotly_chart(fig_pie, use_container_width=True)
-
-            # GRÁFICO DE IMPORTANCIA DE VARIABLES
-            if hasattr(model, "feature_importances_"):
-                st.subheader("📈 Variables con mayor influencia en la predicción")
-                feat_imp = pd.DataFrame({
-                    'Variable': model_columns,
-                    'Importancia': model.feature_importances_
-                }).sort_values(by='Importancia', ascending=False).head(10)
-                fig_bar = px.bar(feat_imp, x='Importancia', y='Variable', orientation='h',
-                                 color='Importancia', color_continuous_scale='Peach')
+            with col1:
+                dept_avg = df.groupby('Department')['Probabilidad_Renuncia'].mean().reset_index()
+                fig_bar = px.bar(dept_avg, x='Department', y='Probabilidad_Renuncia',
+                                 text_auto='.2%', color='Probabilidad_Renuncia',
+                                 color_continuous_scale='Reds',
+                                 title="Probabilidad promedio por departamento")
                 st.plotly_chart(fig_bar, use_container_width=True)
 
+            with col2:
+                fig_pie = px.pie(dept_avg, names='Department', values='Probabilidad_Renuncia',
+                                 color_discrete_sequence=px.colors.qualitative.Pastel,
+                                 hole=0.4, title="Distribución total por departamento")
+                st.plotly_chart(fig_pie, use_container_width=True)
+
+            # ============================
             # DESCARGA
+            # ============================
             st.download_button(
                 "⬇️ Descargar resultados (Excel)",
                 data=export_results_to_excel(df),
@@ -202,6 +208,7 @@ def main():
 # ============================
 if __name__ == "__main__":
     main()
+
 
 
 

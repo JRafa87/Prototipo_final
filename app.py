@@ -4,7 +4,6 @@ import joblib
 import streamlit as st
 import os
 import plotly.express as px
-from sklearn.preprocessing import MinMaxScaler
 
 # ==========================
 # 1. Cargar modelo y artefactos
@@ -15,12 +14,10 @@ def load_model():
         model = joblib.load('models/xgboost_model.pkl')
         categorical_mapping = joblib.load('models/categorical_mapping.pkl')
         scaler = joblib.load('models/scaler.pkl')
-
         df_reference = pd.read_csv('data/reference_data.csv')
         df_reference['Attrition'] = df_reference['Attrition'].replace({'Yes': 1, 'No': 0})
         st.success("✅ Modelo y artefactos cargados correctamente.")
         return model, categorical_mapping, scaler, df_reference
-
     except Exception as e:
         st.error(f"Error al cargar modelo o artefactos: {e}")
         return None, None, None, None
@@ -55,18 +52,18 @@ def preprocess_data(df, model_columns, categorical_mapping, scaler):
 
 
 # ============================
-# 3. Generar recomendaciones
+# 3. Recomendaciones
 # ============================
 def generar_recomendacion_personalizada(row):
     recomendaciones = []
     if row.get('IntencionPermanencia', 3) <= 2:
         recomendaciones.append("Reforzar conversaciones de desarrollo profesional.")
     if row.get('CargaLaboralPercibida', 3) >= 4:
-        recomendaciones.append("Revisar carga laboral y redistribuir tareas.")
+        recomendaciones.append("Revisar la carga laboral y redistribuir tareas.")
     if row.get('SatisfaccionSalarial', 3) <= 2:
         recomendaciones.append("Evaluar ajustes salariales o beneficios.")
     if row.get('ConfianzaEmpresa', 3) <= 2:
-        recomendaciones.append("Fomentar transparencia y confianza.")
+        recomendaciones.append("Fomentar la transparencia y confianza.")
     if row.get('NumeroTardanzas', 0) > 3 or row.get('NumeroFaltas', 0) > 1:
         recomendaciones.append("Revisar causas de ausentismo y ofrecer apoyo.")
     if not recomendaciones:
@@ -109,6 +106,7 @@ def main():
     uploaded_file = st.file_uploader("📂 Sube un archivo CSV o Excel", type=["csv", "xlsx"])
     if uploaded_file is not None:
         df = pd.read_csv(uploaded_file) if uploaded_file.name.endswith('.csv') else pd.read_excel(uploaded_file)
+        st.info(f"✅ Archivo cargado correctamente. Filas: {len(df)}")
         st.dataframe(df.head())
 
         processed_df = preprocess_data(df.drop(columns=['Attrition'], errors='ignore'), model_columns, categorical_mapping, scaler)
@@ -128,14 +126,24 @@ def main():
     if "df_resultados" in st.session_state:
         df = st.session_state.df_resultados
 
-        st.subheader("📈 Distribución de probabilidad de renuncia por departamento")
-        df_chart = df.groupby("Department")["Probabilidad_Renuncia"].mean().reset_index()
-        fig = px.bar(df_chart, x="Department", y="Probabilidad_Renuncia", color="Probabilidad_Renuncia",
-                     color_continuous_scale=["green", "yellow", "red"], text_auto=".1%")
-        fig.update_layout(yaxis_title="Probabilidad promedio", xaxis_title="Departamento", template="simple_white")
-        st.plotly_chart(fig, use_container_width=True)
+        st.subheader("📈 Probabilidad promedio de renuncia por departamento")
+        col1, col2 = st.columns(2)
 
-        st.subheader("👥 Top empleados con mayor probabilidad de renuncia")
+        with col1:
+            dept_avg = df.groupby('Department')['Probabilidad_Renuncia'].mean().reset_index()
+            fig_bar = px.bar(dept_avg, x='Department', y='Probabilidad_Renuncia',
+                             text_auto='.2%', color='Probabilidad_Renuncia',
+                             color_continuous_scale=['#6DD47E', '#FFD966', '#E57373'],
+                             title="Probabilidad promedio por Departamento")
+            st.plotly_chart(fig_bar, use_container_width=True)
+
+        with col2:
+            fig_pie = px.pie(dept_avg, names='Department', values='Probabilidad_Renuncia',
+                             color_discrete_sequence=px.colors.qualitative.Pastel,
+                             hole=0.4, title="Distribución general por Departamento")
+            st.plotly_chart(fig_pie, use_container_width=True)
+
+        st.subheader("👥 Empleados con mayor probabilidad de renuncia")
 
         def color_prob(val):
             if val > 0.50:
@@ -147,9 +155,8 @@ def main():
 
         df_top10 = df.sort_values('Probabilidad_Renuncia', ascending=False).head(10)
 
-        # Tabla personalizada
         for i, row in df_top10.iterrows():
-            col1, col2, col3, col4, col5, col6 = st.columns([1.2, 1.2, 1.5, 1.2, 1, 1])
+            col1, col2, col3, col4, col5, col6 = st.columns([1.2, 1.5, 1.8, 1.5, 1, 1])
             with col1:
                 st.write(f"**{row['EmployeeNumber']}**")
             with col2:
@@ -164,39 +171,42 @@ def main():
             with col6:
                 if st.button("👁️ Ver", key=f"ver_{i}"):
                     st.session_state.modal = {"id": row["EmployeeNumber"], "texto": row["Recomendacion"]}
-                if "modal" in st.session_state and st.session_state.modal and st.session_state.modal["id"] == row["EmployeeNumber"]:
                     st.session_state.show_modal = True
 
         # =====================
-        # Modal persistente (abrir/cerrar)
+        # MODAL FUNCIONAL (abre/cierra)
         # =====================
         if st.session_state.get("show_modal", False):
             modal = st.session_state.modal
-            with st.container():
-                st.markdown(f"""
+            st.markdown(f"""
                 <div style="
                     position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-                    background-color: rgba(0, 0, 0, 0.5);
+                    background-color: rgba(0, 0, 0, 0.6);
                     display: flex; justify-content: center; align-items: center;
                     z-index: 1000;">
                     <div style="
                         background-color: white;
                         padding: 30px;
                         border-radius: 12px;
-                        width: 45%;
-                        box-shadow: 0 4px 25px rgba(0,0,0,0.3);">
+                        width: 50%;
+                        box-shadow: 0 4px 25px rgba(0,0,0,0.3);
+                        text-align: left;">
                         <h4>💬 Recomendaciones para el empleado {modal["id"]}</h4>
                         <p style='font-size:15px; text-align:justify;'>{modal["texto"]}</p>
+                        <button onclick="window.location.reload()" style="
+                            margin-top: 15px;
+                            background-color: #4CAF50;
+                            color: white;
+                            border: none;
+                            padding: 8px 16px;
+                            border-radius: 6px;
+                            cursor: pointer;">Cerrar ventana</button>
                     </div>
                 </div>
-                """, unsafe_allow_html=True)
-
-            if st.button("Cerrar ventana 🟢"):
-                st.session_state.show_modal = False
-                st.session_state.modal = None
+            """, unsafe_allow_html=True)
 
         # =====================
-        # Descargar resultados
+        # DESCARGA RESULTADOS
         # =====================
         st.subheader("📥 Descargar resultados")
         output_filename = export_results_to_excel(df)
@@ -214,6 +224,7 @@ def main():
 # ============================
 if __name__ == "__main__":
     main()
+
 
 
 

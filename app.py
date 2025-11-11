@@ -119,7 +119,7 @@ def main():
             df['Prediction_Renuncia'] = (prob > 0.5).astype(int)
             df['Recomendacion'] = df.apply(generar_recomendacion_personalizada, axis=1)
             st.session_state.df_resultados = df
-            st.session_state.selected_emp = None
+            st.session_state.modal_emp = None
 
     # ===============================
     # Mostrar resultados
@@ -141,7 +141,7 @@ def main():
             fig_bar = px.bar(
                 dept_avg, x='Department', y='Probabilidad_Renuncia',
                 text_auto='.2%', color='Probabilidad_Renuncia',
-                color_continuous_scale=['#6DD47E', '#FFD966', '#E57373'],
+                color_continuous_scale=['#8BC34A', '#FFEB3B', '#E57373'],
                 title="Probabilidad promedio por Departamento"
             )
             st.plotly_chart(fig_bar, use_container_width=True)
@@ -158,10 +158,10 @@ def main():
         st.subheader("👥 Empleados con mayor probabilidad de renuncia")
 
         def color_prob(val):
-            if val > 0.61:
+            if val >= 0.5:
                 return 'background-color: #F28B82; color:black;'
-            elif 0.50 <= val <= 0.60:
-                return 'background-color: #FFF176; color:black;'
+            elif 0.4 <= val < 0.5:
+                return 'background-color: #FFF59D; color:black;'
             else:
                 return 'background-color: #C8E6C9; color:black;'
 
@@ -182,67 +182,41 @@ def main():
                 st.markdown(f"<div style='{color}; text-align:center; border-radius:8px; padding:4px;'>{row['Probabilidad_Renuncia']:.2%}</div>", unsafe_allow_html=True)
             with col6:
                 if st.button("👁️ Ver", key=f"ver_{i}"):
-                    st.session_state.selected_emp = i
+                    st.session_state.modal_emp = row
 
-        # ==== MODAL flotante mejorado ====
-        if st.session_state.get("selected_emp") is not None:
-            empleado = df_top10.loc[st.session_state.selected_emp]
+        # ==== MODAL flotante cerrable ====
+        if st.session_state.get("modal_emp") is not None:
+            emp = st.session_state.modal_emp
 
-            st.markdown(
-                f"""
-                <style>
-                    .modal-background {{
-                        position: fixed;
-                        top: 0; left: 0; width: 100%; height: 100%;
-                        background-color: rgba(0, 0, 0, 0.6);
-                        display: flex; justify-content: center; align-items: center;
-                        z-index: 1000;
-                    }}
-                    .modal-content {{
-                        background-color: white;
-                        padding: 30px;
-                        border-radius: 12px;
-                        width: 60%;
-                        max-width: 700px;
-                        box-shadow: 0 4px 25px rgba(0,0,0,0.3);
-                        position: relative;
-                    }}
-                    .close-button {{
-                        position: absolute;
-                        top: 10px;
-                        right: 15px;
-                        font-size: 18px;
-                        font-weight: bold;
-                        color: #666;
-                        cursor: pointer;
-                    }}
-                </style>
-                <div class="modal-background" onclick="window.parent.postMessage('close_modal', '*')">
-                    <div class="modal-content" onclick="event.stopPropagation()">
-                        <div class="close-button" onclick="window.parent.postMessage('close_modal', '*')">✖</div>
-                        <h4>💬 Recomendaciones para el empleado {empleado['EmployeeNumber']}</h4>
-                        <p style='font-size:15px; text-align:justify;'>{empleado["Recomendacion"]}</p>
-                    </div>
+            html_modal = f"""
+            <div id="overlay" style="
+                position: fixed; top: 0; left: 0;
+                width: 100%; height: 100%;
+                background-color: rgba(0, 0, 0, 0.6);
+                display: flex; justify-content: center; align-items: center;
+                z-index: 9999;
+            " onclick="document.getElementById('overlay').remove()">
+                <div style="
+                    background-color: white;
+                    padding: 25px;
+                    border-radius: 12px;
+                    width: 60%;
+                    max-width: 700px;
+                    box-shadow: 0 4px 25px rgba(0,0,0,0.3);
+                    position: relative;
+                    animation: fadeIn 0.3s ease-in-out;
+                " onclick="event.stopPropagation()">
+                    <span onclick="document.getElementById('overlay').remove()" 
+                        style="position:absolute; top:10px; right:15px; cursor:pointer; font-weight:bold;">✖</span>
+                    <h4>💬 Recomendaciones para el empleado {emp['EmployeeNumber']}</h4>
+                    <p style='font-size:15px; text-align:justify;'>{emp["Recomendacion"]}</p>
+                    <button onclick="document.getElementById('overlay').remove()" 
+                        style="background-color:#4CAF50; color:white; padding:8px 16px; border:none; border-radius:6px; cursor:pointer;">Cerrar</button>
                 </div>
-                """,
-                unsafe_allow_html=True
-            )
-
-            # Detectar cierre (con JS event)
-            js = """
-            <script>
-            window.addEventListener("message", (event) => {
-                if (event.data === "close_modal") {
-                    window.parent.postMessage("rerun_app", "*");
-                }
-            });
-            </script>
+            </div>
+            <style>@keyframes fadeIn {{ from {{opacity:0;}} to {{opacity:1;}} }}</style>
             """
-            st.components.v1.html(js, height=0)
-
-            if st.button("❌ Cerrar ventana manualmente"):
-                st.session_state.selected_emp = None
-                st.rerun()
+            st.markdown(html_modal, unsafe_allow_html=True)
 
         # ==== DESCARGA ====
         st.subheader("📥 Descargar resultados")
@@ -258,6 +232,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 

@@ -163,14 +163,7 @@ def main():
 
             with col6:
                 with st.popover("👁️ Ver detalles"):
-                    st.markdown("### 👤 Detalles del empleado")
-                    st.write(f"**Departamento:** {row['Department']}")
-                    st.write(f"**Cargo:** {row['JobRole']}")
-                    st.write(f"**Ingreso mensual:** S/. {row['MonthlyIncome']:,.2f}")
-                    st.progress(float(row['Probabilidad_Renuncia']))
-                    st.write(f"**Probabilidad de renuncia:** {row['Probabilidad_Renuncia']:.1%}")
-                    st.divider()
-
+                    
                     st.markdown("#### 🧭 Recomendaciones")
                     recs = [r.strip() for r in row["Recomendacion"].split(" | ") if r.strip()]
                     with st.container(border=True):

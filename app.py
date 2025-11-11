@@ -15,7 +15,6 @@ def load_model():
         scaler = joblib.load('models/scaler.pkl')
 
         st.success("✅ Modelo y artefactos cargados correctamente.")
-        st.toast("Modelo cargado correctamente 🎯", icon="✅")
         return model, categorical_mapping, scaler
     except Exception as e:
         st.error(f"❌ Error al cargar modelo o artefactos: {e}")

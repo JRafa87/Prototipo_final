@@ -117,7 +117,7 @@ def main():
             df['Prediction_Renuncia'] = (prob > 0.5).astype(int)
             df['Recomendacion'] = df.apply(generar_recomendacion_personalizada, axis=1)
             st.session_state.df_resultados = df
-            st.session_state.show_modal = False
+            st.session_state.selected_emp = None
 
     # ===============================
     # Mostrar resultados
@@ -176,39 +176,18 @@ def main():
                 st.markdown(f"<div style='{color}; text-align:center; border-radius:8px; padding:4px;'>{row['Probabilidad_Renuncia']:.2%}</div>", unsafe_allow_html=True)
             with col6:
                 if st.button("👁️ Ver", key=f"ver_{i}"):
-                    st.session_state.modal = {"id": row["EmployeeNumber"], "texto": row["Recomendacion"]}
-                    st.session_state.show_modal = True
+                    st.session_state.selected_emp = i
 
-        # ==== MODAL FUNCIONAL ====
-        if st.session_state.get("show_modal", False):
-            modal = st.session_state.modal
-            st.markdown(
-                f"""
-                <div style="
-                    position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-                    background-color: rgba(0, 0, 0, 0.6);
-                    display: flex; justify-content: center; align-items: center;
-                    z-index: 1000;">
-                    <div style="
-                        background-color: white;
-                        padding: 30px;
-                        border-radius: 12px;
-                        width: 50%;
-                        box-shadow: 0 4px 25px rgba(0,0,0,0.3);
-                        text-align: left;">
-                        <h4>💬 Recomendaciones para el empleado {modal["id"]}</h4>
-                        <p style='font-size:15px; text-align:justify;'>{modal["texto"]}</p>
-                    </div>
-                </div>
-                """,
-                unsafe_allow_html=True
-            )
-
-            # Este botón es de Streamlit, no HTML → sí responde
-            st.markdown("<br>", unsafe_allow_html=True)
-            if st.button("❌ Cerrar ventana"):
-                st.session_state.show_modal = False
-                st.experimental_rerun()
+        # ==== Modal "nativo" ====
+        if st.session_state.get("selected_emp") is not None:
+            empleado = df_top10.loc[st.session_state.selected_emp]
+            st.markdown("---")
+            with st.container(border=True):
+                st.subheader(f"💬 Recomendaciones para el empleado {empleado['EmployeeNumber']}")
+                st.info(empleado["Recomendacion"])
+                if st.button("❌ Cerrar"):
+                    st.session_state.selected_emp = None
+                    st.rerun()
 
         # ==== DESCARGA ====
         st.subheader("📥 Descargar resultados")
@@ -227,6 +206,7 @@ def main():
 # ============================
 if __name__ == "__main__":
     main()
+
 
 
 

@@ -7,3 +7,4 @@ streamlit
 joblib
 openpyxl
 xlsxwriter
+plotly

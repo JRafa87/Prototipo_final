@@ -182,29 +182,30 @@ def main():
         # ==== MODAL FUNCIONAL ====
         if st.session_state.get("show_modal", False):
             modal = st.session_state.modal
-            with st.container():
-                st.markdown(
-                    f"""
+            st.markdown(
+                f"""
+                <div style="
+                    position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+                    background-color: rgba(0, 0, 0, 0.6);
+                    display: flex; justify-content: center; align-items: center;
+                    z-index: 1000;">
                     <div style="
-                        position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-                        background-color: rgba(0, 0, 0, 0.6);
-                        display: flex; justify-content: center; align-items: center;
-                        z-index: 1000;">
-                        <div style="
-                            background-color: white;
-                            padding: 30px;
-                            border-radius: 12px;
-                            width: 50%;
-                            box-shadow: 0 4px 25px rgba(0,0,0,0.3);
-                            text-align: left;">
-                            <h4>💬 Recomendaciones para el empleado {modal["id"]}</h4>
-                            <p style='font-size:15px; text-align:justify;'>{modal["texto"]}</p>
-                        </div>
+                        background-color: white;
+                        padding: 30px;
+                        border-radius: 12px;
+                        width: 50%;
+                        box-shadow: 0 4px 25px rgba(0,0,0,0.3);
+                        text-align: left;">
+                        <h4>💬 Recomendaciones para el empleado {modal["id"]}</h4>
+                        <p style='font-size:15px; text-align:justify;'>{modal["texto"]}</p>
                     </div>
-                    """,
-                    unsafe_allow_html=True
-                )
+                </div>
+                """,
+                unsafe_allow_html=True
+            )
 
+            # Este botón es de Streamlit, no HTML → sí responde
+            st.markdown("<br>", unsafe_allow_html=True)
             if st.button("❌ Cerrar ventana"):
                 st.session_state.show_modal = False
                 st.experimental_rerun()
@@ -226,6 +227,7 @@ def main():
 # ============================
 if __name__ == "__main__":
     main()
+
 
 
 

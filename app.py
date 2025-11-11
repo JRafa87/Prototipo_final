@@ -13,6 +13,7 @@ def load_model():
         model = joblib.load('models/xgboost_model.pkl')
         categorical_mapping = joblib.load('models/categorical_mapping.pkl')
         scaler = joblib.load('models/scaler.pkl')
+
         st.success("✅ Modelo y artefactos cargados correctamente.")
         return model, categorical_mapping, scaler
     except Exception as e:
@@ -25,6 +26,7 @@ def load_model():
 # ==========================
 def preprocess_data(df, model_columns, categorical_mapping, scaler):
     df_processed = df.copy()
+
     numeric_cols = df_processed.select_dtypes(include=np.number).columns.tolist()
     cols_to_fill = list(set(numeric_cols) & set(model_columns))
     if cols_to_fill:
@@ -142,34 +144,36 @@ def main():
 
         def color_prob(val):
             if val >= 0.5:
-                return 'background-color:#FFCDD2; color:black; font-weight:bold; text-align:center;'
+                return 'background-color:#FFCDD2; color:black; font-weight:bold;'
             elif 0.4 <= val < 0.5:
-                return 'background-color:#FFF59D; color:black; text-align:center;'
+                return 'background-color:#FFF59D; color:black;'
             else:
-                return 'background-color:#C8E6C9; color:black; text-align:center;'
+                return 'background-color:#C8E6C9; color:black;'
 
         df_top10 = df.sort_values('Probabilidad_Renuncia', ascending=False).head(10)
         for i, row in df_top10.iterrows():
             col1, col2, col3, col4, col5, col6 = st.columns([1.2, 1.5, 1.8, 1.5, 1, 1])
-            with col1: st.write(f"**{int(row['EmployeeNumber'])}**")
+            with col1: st.write(f"**{row['EmployeeNumber']}**")
             with col2: st.write(row['Department'])
             with col3: st.write(row['JobRole'])
             with col4: st.write(f"S/. {row['MonthlyIncome']:,.2f}")
             with col5:
-                st.markdown(
-                    f"<div style='{color_prob(row['Probabilidad_Renuncia'])} border-radius:8px; padding:4px;'>{row['Probabilidad_Renuncia']:.1%}</div>",
-                    unsafe_allow_html=True
-                )
-
+                st.markdown(f"<div style='{color_prob(row['Probabilidad_Renuncia'])}; text-align:center; border-radius:8px; padding:4px;'>{row['Probabilidad_Renuncia']:.1%}</div>", unsafe_allow_html=True)
             with col6:
                 with st.popover("👁️ Ver detalles"):
                     with st.container(border=True):
-                    st.markdown("#### 🧭 Recomendaciones")
-                    recs = [r.strip() for r in row["Recomendacion"].split(" | ") if r.strip()]
-                    with st.container(border=True):
-                        st.markdown("**Sugerencias personalizadas:**")
-                        for rec in recs:
+                        st.markdown("### 🧭 Recomendaciones")
+
+                        recs = [r.strip() for r in row["Recomendacion"].split(" | ") if r.strip()]
+
+                        max_recs = 5
+                        for rec in recs[:max_recs]:
                             st.write(f"- {rec}")
+
+                        if len(recs) > max_recs:
+                            st.caption(f"… y {len(recs) - max_recs} más")
+
+                        st.caption("👆 Haz clic fuera del cuadro para cerrar.")
 
         # === GRÁFICOS ===
         st.subheader("📊 Análisis por Departamento")
@@ -202,6 +206,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 

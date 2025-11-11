@@ -140,92 +140,74 @@ def main():
             df['Prediction_Renuncia'] = (prob > 0.5).astype(int)
             df['Recomendacion'] = df.apply(generar_recomendacion_personalizada, axis=1)
 
-            # SEMAFORIZACIÓN por umbrales nuevos
-            def color_prob(val):
-                if val > 0.50:
-                    return 'background-color: #F28B82; color:black;'  # rojo suave
-                elif 0.40 <= val <= 0.50:
-                    return 'background-color: #FFF4A3; color:black;'  # amarillo pastel
-                else:
-                    return 'background-color: #B7E1CD; color:black;'  # verde suave
+            # Guardar resultados
+            st.session_state.df_resultados = df
 
-            st.subheader("👥 Top 10 empleados con mayor probabilidad de renuncia")
-            df_top10 = df.sort_values('Probabilidad_Renuncia', ascending=False).head(10).copy()
+    # Mostrar resultados si existen
+    if "df_resultados" in st.session_state:
+        df = st.session_state.df_resultados
+        df_top10 = df.sort_values('Probabilidad_Renuncia', ascending=False).head(10)
 
-            # Estado del empleado seleccionado
-            if "empleado_sel" not in st.session_state:
-                st.session_state.empleado_sel = None
+        st.subheader("👥 Top 10 empleados con mayor probabilidad de renuncia")
 
-            for i, row in df_top10.iterrows():
-                col1, col2, col3, col4, col5, col6 = st.columns([1.2, 1.2, 1.5, 1.2, 1, 1])
-                with col1:
-                    st.write(f"**{row['EmployeeNumber']}**")
-                with col2:
-                    st.write(row['Department'])
-                with col3:
-                    st.write(row['JobRole'])
-                with col4:
-                    st.write(f"S/. {row['MonthlyIncome']}")
-                with col5:
-                    color = color_prob(row['Probabilidad_Renuncia'])
-                    st.markdown(f"<div style='{color}; text-align:center; border-radius:8px; padding:4px;'>{row['Probabilidad_Renuncia']:.2%}</div>", unsafe_allow_html=True)
-                with col6:
-                    if st.button(f"👁️ Ver", key=f"ver_{i}"):
-                        st.session_state.empleado_sel = i
+        def color_prob(val):
+            if val > 0.50:
+                return 'background-color: #F28B82; color:black;'  # rojo suave
+            elif 0.40 <= val <= 0.50:
+                return 'background-color: #FFF4A3; color:black;'  # amarillo pastel
+            else:
+                return 'background-color: #B7E1CD; color:black;'  # verde suave
 
-            # Mostrar ventana modal si hay selección
-            if st.session_state.empleado_sel is not None:
-                emp = df_top10.loc[st.session_state.empleado_sel]
-                st.markdown(f"""
-                    <div style="
-                        background-color:white;
-                        border:2px solid #ccc;
-                        border-radius:12px;
-                        padding:20px;
-                        position:fixed;
-                        top:20%;
-                        left:30%;
-                        width:40%;
-                        box-shadow:0 0 20px rgba(0,0,0,0.3);
-                        z-index:9999;">
-                        <h4>💬 Recomendaciones para el empleado {emp['EmployeeNumber']}</h4>
-                        <p style='font-size:15px;'>{emp['Recomendacion']}</p>
-                        <br>
-                        <form action="" method="get">
-                            <input type="submit" value="Cerrar" style="
-                                background-color:#4CAF50;
-                                color:white;
-                                padding:8px 16px;
-                                border:none;
-                                border-radius:6px;
-                                cursor:pointer;">
-                        </form>
-                    </div>
-                """, unsafe_allow_html=True)
-
-            # GRÁFICOS
-            st.subheader("📊 Análisis por Departamento y Variables Clave")
-            col1, col2 = st.columns(2)
+        # Crear tabla con botones
+        for i, row in df_top10.iterrows():
+            col1, col2, col3, col4, col5, col6 = st.columns([1.2, 1.2, 1.5, 1.2, 1, 1])
             with col1:
-                dept_avg = df.groupby('Department')['Probabilidad_Renuncia'].mean().reset_index()
-                fig_bar = px.bar(dept_avg, x='Department', y='Probabilidad_Renuncia',
-                                 text_auto='.2%', color='Probabilidad_Renuncia',
-                                 color_continuous_scale='Reds',
-                                 title="Probabilidad promedio por departamento")
-                st.plotly_chart(fig_bar, use_container_width=True)
+                st.write(f"**{row['EmployeeNumber']}**")
             with col2:
-                fig_pie = px.pie(dept_avg, names='Department', values='Probabilidad_Renuncia',
-                                 color_discrete_sequence=px.colors.qualitative.Pastel,
-                                 hole=0.4, title="Distribución total por departamento")
-                st.plotly_chart(fig_pie, use_container_width=True)
+                st.write(row['Department'])
+            with col3:
+                st.write(row['JobRole'])
+            with col4:
+                st.write(f"S/. {row['MonthlyIncome']}")
+            with col5:
+                color = color_prob(row['Probabilidad_Renuncia'])
+                st.markdown(f"<div style='{color}; text-align:center; border-radius:8px; padding:4px;'>{row['Probabilidad_Renuncia']:.2%}</div>", unsafe_allow_html=True)
+            with col6:
+                if st.button("👁️ Ver", key=f"ver_{i}"):
+                    st.session_state.modal = {
+                        "id": row["EmployeeNumber"],
+                        "texto": row["Recomendacion"]
+                    }
 
-            # DESCARGA
-            st.download_button(
-                "⬇️ Descargar resultados (Excel)",
-                data=export_results_to_excel(df),
-                file_name="predicciones_resultados.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-            )
+        # Modal persistente
+        if "modal" in st.session_state and st.session_state.modal is not None:
+            modal = st.session_state.modal
+            st.markdown(f"""
+            <div style="
+                position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+                background-color: rgba(0, 0, 0, 0.5);
+                display: flex; justify-content: center; align-items: center;
+                z-index: 1000;">
+                <div style="
+                    background-color: white;
+                    padding: 30px;
+                    border-radius: 12px;
+                    width: 45%;
+                    box-shadow: 0 4px 25px rgba(0,0,0,0.3);">
+                    <h4>💬 Recomendaciones para el empleado {modal["id"]}</h4>
+                    <p style='font-size:15px; text-align:justify;'>{modal["texto"]}</p>
+                    <div style='text-align:right;'>
+                        <button onclick="window.location.reload()" style="
+                            background-color:#4CAF50;
+                            color:white;
+                            padding:8px 16px;
+                            border:none;
+                            border-radius:6px;
+                            cursor:pointer;">Cerrar</button>
+                    </div>
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
 
 
 # ============================
@@ -233,6 +215,7 @@ def main():
 # ============================
 if __name__ == "__main__":
     main()
+
 
 
 

@@ -163,7 +163,7 @@ def main():
 
             with col6:
                 with st.popover("👁️ Ver detalles"):
-                    
+                    with st.container(border=True):
                     st.markdown("#### 🧭 Recomendaciones")
                     recs = [r.strip() for r in row["Recomendacion"].split(" | ") if r.strip()]
                     with st.container(border=True):

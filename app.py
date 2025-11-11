@@ -162,14 +162,33 @@ def main():
             with col6:
                 with st.popover("👁️ Ver detalles"):
                     st.markdown(
-                       """
-                    <style>
-                    .popover-box {
-                       width: 360px;              /* 👈 Ajusta aquí el tamaño total */
-                       padding: 10px;
-                       line-height: 1.4;
-                       font-size: 15px;
+                        """
+                        <style>
+                        /* Fondo gris translúcido al abrir el popover */
+                        div[data-testid="stPopoverContent"]::before {
+                            content: "";
+                            position: fixed;
+                            top: 0;
+                            left: 0;
+                            width: 100vw;
+                            height: 100vh;
+                            background-color: rgba(0, 0, 0, 0.4); /* 👈 Opacidad del fondo */
+                            z-index: 0;
                         }
+
+                        /* Caja principal del popover */
+                        .popover-box {
+                            width: 380px;              /* 👈 Ajusta aquí el tamaño */
+                            background-color: white;
+                            border-radius: 12px;
+                            padding: 14px 18px;
+                            line-height: 1.5;
+                            font-size: 15px;
+                            box-shadow: 0 4px 10px rgba(0,0,0,0.25);
+                            position: relative;
+                            z-index: 1;
+                        }
+
                         .popover-box ul {
                             padding-left: 18px;
                         }
@@ -177,10 +196,22 @@ def main():
                         """,
                         unsafe_allow_html=True
                     )
-                    st.markdown(f"**Empleado {row['EmployeeNumber']}** — Probabilidad: {row['Probabilidad_Renuncia']:.1%}")
-                    st.markdown("### 🧭 Recomendaciones:")
-                    recs = row["Recomendacion"].split(" | ")
-                    st.markdown("<ul>" + "".join(f"<li>{r}</li>" for r in recs) + "</ul>", unsafe_allow_html=True)
+
+                    st.markdown("<div class='popover-box'>", unsafe_allow_html=True)
+                    st.markdown(f"### 👤 Empleado {int(row['EmployeeNumber'])}")
+                    st.markdown(f"**Departamento:** {row['Department']}")
+                    st.markdown(f"**Cargo:** {row['JobRole']}")
+                    st.progress(float(row['Probabilidad_Renuncia']))
+                    st.markdown(f"**Probabilidad de renuncia:** {row['Probabilidad_Renuncia']:.1%}")
+                    st.divider()
+
+                    st.markdown("#### 🧭 Recomendaciones:")
+                    recs = [r.strip() for r in row["Recomendacion"].split(" | ") if r.strip()]
+                    for rec in recs:
+                        st.write(f"- {rec}")
+
+                    st.caption("👆 Haz clic fuera del cuadro para cerrar")
+                    st.markdown("</div>", unsafe_allow_html=True)
 
         # === GRÁFICOS ===
         st.subheader("📊 Análisis por Departamento")
@@ -213,6 +244,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 

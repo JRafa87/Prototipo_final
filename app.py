@@ -2,7 +2,6 @@ import pandas as pd
 import numpy as np
 import joblib
 import streamlit as st
-import os
 import plotly.express as px
 
 # ==========================
@@ -16,7 +15,6 @@ def load_model():
         scaler = joblib.load('models/scaler.pkl')
         df_reference = pd.read_csv('data/reference_data.csv')
         df_reference['Attrition'] = df_reference['Attrition'].replace({'Yes': 1, 'No': 0})
-        st.success("✅ Modelo y artefactos cargados correctamente.")
         return model, categorical_mapping, scaler, df_reference
     except Exception as e:
         st.error(f"Error al cargar modelo o artefactos: {e}")
@@ -119,6 +117,7 @@ def main():
             df['Prediction_Renuncia'] = (prob > 0.5).astype(int)
             df['Recomendacion'] = df.apply(generar_recomendacion_personalizada, axis=1)
             st.session_state.df_resultados = df
+            st.session_state.show_modal = False
 
     # ===============================
     # Mostrar resultados
@@ -126,32 +125,39 @@ def main():
     if "df_resultados" in st.session_state:
         df = st.session_state.df_resultados
 
-        st.subheader("📈 Probabilidad promedio de renuncia por departamento")
+        # ==== Gráficos ====
+        st.subheader("📊 Análisis general por departamento")
         col1, col2 = st.columns(2)
 
+        dept_avg = df.groupby('Department')['Probabilidad_Renuncia'].mean().reset_index()
+
         with col1:
-            dept_avg = df.groupby('Department')['Probabilidad_Renuncia'].mean().reset_index()
-            fig_bar = px.bar(dept_avg, x='Department', y='Probabilidad_Renuncia',
-                             text_auto='.2%', color='Probabilidad_Renuncia',
-                             color_continuous_scale=['#6DD47E', '#FFD966', '#E57373'],
-                             title="Probabilidad promedio por Departamento")
+            fig_bar = px.bar(
+                dept_avg, x='Department', y='Probabilidad_Renuncia',
+                text_auto='.2%', color='Probabilidad_Renuncia',
+                color_continuous_scale=['#6DD47E', '#FFD966', '#E57373'],
+                title="Probabilidad promedio por Departamento"
+            )
             st.plotly_chart(fig_bar, use_container_width=True)
 
         with col2:
-            fig_pie = px.pie(dept_avg, names='Department', values='Probabilidad_Renuncia',
-                             color_discrete_sequence=px.colors.qualitative.Pastel,
-                             hole=0.4, title="Distribución general por Departamento")
+            fig_pie = px.pie(
+                dept_avg, names='Department', values='Probabilidad_Renuncia',
+                color_discrete_sequence=px.colors.qualitative.Pastel,
+                hole=0.4, title="Distribución general por Departamento"
+            )
             st.plotly_chart(fig_pie, use_container_width=True)
 
+        # ==== Tabla ====
         st.subheader("👥 Empleados con mayor probabilidad de renuncia")
 
         def color_prob(val):
-            if val > 0.50:
+            if val > 0.61:
                 return 'background-color: #F28B82; color:black;'
-            elif 0.40 <= val <= 0.50:
-                return 'background-color: #FFF4A3; color:black;'
+            elif 0.50 <= val <= 0.60:
+                return 'background-color: #FFF176; color:black;'
             else:
-                return 'background-color: #B7E1CD; color:black;'
+                return 'background-color: #C8E6C9; color:black;'
 
         df_top10 = df.sort_values('Probabilidad_Renuncia', ascending=False).head(10)
 
@@ -173,41 +179,37 @@ def main():
                     st.session_state.modal = {"id": row["EmployeeNumber"], "texto": row["Recomendacion"]}
                     st.session_state.show_modal = True
 
-        # =====================
-        # MODAL FUNCIONAL (abre/cierra)
-        # =====================
+        # ==== MODAL FUNCIONAL ====
         if st.session_state.get("show_modal", False):
             modal = st.session_state.modal
-            st.markdown(f"""
-                <div style="
-                    position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-                    background-color: rgba(0, 0, 0, 0.6);
-                    display: flex; justify-content: center; align-items: center;
-                    z-index: 1000;">
+            with st.container():
+                st.markdown(
+                    f"""
                     <div style="
-                        background-color: white;
-                        padding: 30px;
-                        border-radius: 12px;
-                        width: 50%;
-                        box-shadow: 0 4px 25px rgba(0,0,0,0.3);
-                        text-align: left;">
-                        <h4>💬 Recomendaciones para el empleado {modal["id"]}</h4>
-                        <p style='font-size:15px; text-align:justify;'>{modal["texto"]}</p>
-                        <button onclick="window.location.reload()" style="
-                            margin-top: 15px;
-                            background-color: #4CAF50;
-                            color: white;
-                            border: none;
-                            padding: 8px 16px;
-                            border-radius: 6px;
-                            cursor: pointer;">Cerrar ventana</button>
+                        position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+                        background-color: rgba(0, 0, 0, 0.6);
+                        display: flex; justify-content: center; align-items: center;
+                        z-index: 1000;">
+                        <div style="
+                            background-color: white;
+                            padding: 30px;
+                            border-radius: 12px;
+                            width: 50%;
+                            box-shadow: 0 4px 25px rgba(0,0,0,0.3);
+                            text-align: left;">
+                            <h4>💬 Recomendaciones para el empleado {modal["id"]}</h4>
+                            <p style='font-size:15px; text-align:justify;'>{modal["texto"]}</p>
+                        </div>
                     </div>
-                </div>
-            """, unsafe_allow_html=True)
+                    """,
+                    unsafe_allow_html=True
+                )
 
-        # =====================
-        # DESCARGA RESULTADOS
-        # =====================
+            if st.button("❌ Cerrar ventana"):
+                st.session_state.show_modal = False
+                st.experimental_rerun()
+
+        # ==== DESCARGA ====
         st.subheader("📥 Descargar resultados")
         output_filename = export_results_to_excel(df)
         with open(output_filename, "rb") as file:
@@ -224,6 +226,7 @@ def main():
 # ============================
 if __name__ == "__main__":
     main()
+
 
 
 

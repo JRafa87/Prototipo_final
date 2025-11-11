@@ -4,7 +4,6 @@ import joblib
 import streamlit as st
 import os
 from sklearn.preprocessing import MinMaxScaler
-from sklearn.metrics import accuracy_score, f1_score
 import matplotlib.pyplot as plt
 
 # ==========================
@@ -35,6 +34,7 @@ def load_model():
         df_reference['Attrition'] = df_reference['Attrition'].replace({'Yes': 1, 'No': 0})
 
         true_labels_reference = df_reference['Attrition'].astype(int).copy()
+        # df_reference_features ahora incluye todas las columnas EXCEPTO Attrition y se usará para el merge.
         df_reference_features = df_reference.drop(columns=['Attrition'], errors='ignore').copy()
         
         st.success("✅ Modelo y artefactos cargados correctamente.")
@@ -54,11 +54,7 @@ def load_model():
 def preprocess_data(df, model_columns, categorical_mapping, scaler):
     df_processed = df.copy()
 
-    # Verificar si faltan columnas y agregarlas
-    for col in model_columns:
-        if col not in df_processed.columns:
-            df_processed[col] = np.nan  # Agregar columnas faltantes con NaN
-
+    # Validar columnas
     # Rellenar nulos y codificar
     df_processed = df_processed.drop_duplicates()
     numeric_cols_for_fillna = df_processed.select_dtypes(include=np.number).columns.tolist()
@@ -80,12 +76,11 @@ def preprocess_data(df, model_columns, categorical_mapping, scaler):
             # Rellenar valores desconocidos (si los hay) con el valor de 'DESCONOCIDO' o -1
             df_processed[col] = df_processed[col].fillna(categorical_mapping.get(col, {}).get('DESCONOCIDO', -1))
         
-    # --- Ordenar y seleccionar solo las columnas de FEATURES ANTES DE ESCALAR ---
+    # Ordenar y seleccionar solo las columnas de FEATURES ANTES DE ESCALAR
     df_to_scale = df_processed[model_columns].copy()
     
     # Escalado
     try:
-        # El scaler espera solo las columnas de las features
         df_processed[model_columns] = scaler.transform(df_to_scale)
     except Exception as e:
         st.error(f"Error al escalar los datos: {e}. ¿El scaler fue entrenado correctamente con la forma de la data?")
@@ -96,109 +91,150 @@ def preprocess_data(df, model_columns, categorical_mapping, scaler):
 
 
 # ============================
-# Función para la Predicción
+#  Funciones de Evaluación
 # ============================
-def predict(model, df_processed):
-    try:
-        # Hacer predicciones con el modelo
-        probabilidad_renuncia = model.predict_proba(df_processed)[:, 1]
-        predictions = (probabilidad_renuncia > 0.5).astype(int)  # Aplicar umbral para clasificación binaria
-        return probabilidad_renuncia, predictions
-    except Exception as e:
-        st.error(f"Error al hacer la predicción: {e}")
-        return None, None
+def evaluate_metrics(true_labels, predictions):
+    acc = (true_labels == predictions).mean()
+    return acc
 
 
 # ============================
-#  Interfaz Streamlit
+#  3. Interfaz Streamlit
 # ============================
 def main():
-    st.set_page_config(page_title="Predicción y Simulación de Renuncia", layout="wide")
-    st.title("📊 Modelo de Predicción y Simulación de Renuncia de Empleados")
-    st.markdown("Elige entre cargar un archivo o ingresar datos manualmente para hacer predicciones y análisis.")
+    st.set_page_config(page_title="Predicción de Renuncia", layout="wide")
+    st.title("📊 Modelo de Predicción de Renuncia de Empleados")
+    st.markdown("Carga tu archivo de datos para obtener predicciones.")
 
     model, categorical_mapping, scaler, df_reference_features, true_labels_reference = load_model()
     if model is None:
         return
 
-    # Columnas que debe tener el dataset cargado
+    # Estas columnas DEBEN coincidir con las usadas en el entrenamiento y en el orden exacto.
     model_feature_columns = [
-        'Edad', 'ViajeDeNegocios', 'TarifaDiaria', 'Departamento', 'DistanciaDeCasa', 'Educacion', 'CampoEducacion', 
-        'SatisfaccionAmbiente', 'Genero', 'TarifaHora', 'InvolucramientoTrabajo', 'NivelTrabajo', 'RolTrabajo', 'SatisfaccionTrabajo', 
-        'EstadoCivil', 'IngresoMensual', 'TasaMensual', 'NumEmpresasTrabajadas', 'TiempoExtra', 'IncrementoSalarial', 
-        'RendimientoTrabajo', 'SatisfaccionRelaciones', 'NivelOpcionesAcciones', 'TotalAñosTrabajados', 'TiempoEntrenamiento', 
-        'EquilibrioTrabajoVida', 'AñosEnEmpresa', 'AñosEnRolActual', 'AñosUltimaPromocion', 'AñosConGerenteActual', 
-        'IntencionPermanencia', 'CargaLaboralPercibida', 'SatisfaccionSalarial', 'ConfianzaEmpresa', 'NumeroTardanzas', 
-        'NumeroFaltas'
+        'Age', 'BusinessTravel', 'DailyRate', 'Department', 'DistanceFromHome',
+        'Education', 'EducationField', 'EnvironmentSatisfaction', 'Gender', 'HourlyRate',
+        'JobInvolvement', 'JobLevel', 'JobRole', 'JobSatisfaction', 'MaritalStatus',
+        'MonthlyIncome', 'MonthlyRate', 'NumCompaniesWorked', 'OverTime', 'PercentSalaryHike',
+        'PerformanceRating', 'RelationshipSatisfaction', 'StockOptionLevel', 'TotalWorkingYears',
+        'TrainingTimesLastYear', 'WorkLifeBalance', 'YearsAtCompany', 'YearsInCurrentRole',
+        'YearsSinceLastPromotion', 'YearsWithCurrManager',
+        'IntencionPermanencia', 'CargaLaboralPercibida', 'SatisfaccionSalarial', 
+        'ConfianzaEmpresa', 'NumeroTardanzas', 'NumeroFaltas' 
     ]
-
-    # 1. Opción para cargar archivo CSV o Excel
-    st.header("Hoja 1: Cargar archivo para predicción")
-    uploaded_file = st.file_uploader("Sube un archivo CSV o Excel (.csv, .xlsx)", type=["csv", "xlsx"])
-
+    
+    uploaded_file = st.file_uploader("Sube un archivo CSV o Excel (.csv, .xlsx) para PREDICCIÓN", type=["csv", "xlsx"])
+    
     if uploaded_file is not None:
         try:
             if uploaded_file.name.endswith('.csv'):
                 df = pd.read_csv(uploaded_file)
             else:
                 df = pd.read_excel(uploaded_file)
-
             st.info(f"✅ Archivo cargado correctamente. Total de filas: {len(df)}")
             st.dataframe(df.head())
         except Exception as e:
             st.error(f"Error al leer el archivo: {e}")
             return
 
-        # Procesar el archivo cargado
-        df_features_uploaded = df.drop(columns=['Attrition'], errors='ignore').copy()
+        df_original = df.copy() 
+        df_features_uploaded = df_original.drop(columns=['Attrition'], errors='ignore').copy()
+        
+        # Usamos df_features_uploaded para el preprocesamiento
         processed_df = preprocess_data(df_features_uploaded, model_feature_columns, categorical_mapping, scaler)
         
         if processed_df is None:
             st.error("No se puede continuar con la predicción debido a un error de preprocesamiento.")
-            return
+            return 
+
+        st.header("1. Predicción con Datos Cargados")
         
-        # Ejecutar predicción con los datos cargados
-        if st.button("🚀 Ejecutar Predicción (Cargar archivo)"):
+        if st.button("🚀 Ejecutar Predicción"):
             st.info("Ejecutando el modelo sobre los datos cargados...")
-            probabilidad_renuncia, predictions = predict(model, processed_df)
 
+            # Realizar predicción
+            probabilidad_renuncia = model.predict_proba(processed_df)[:, 1]
+            predictions = (probabilidad_renuncia > 0.5).astype(int)
+            
             # Unir resultados a la data original
-            df['Prediction_Renuncia'] = predictions
-            df['Probabilidad_Renuncia'] = probabilidad_renuncia
-            st.success("✅ Predicción de datos cargados Completada!")
-            st.dataframe(df[['Prediction_Renuncia', 'Probabilidad_Renuncia']])
+            df_original['Prediction_Renuncia'] = predictions
+            df_original['Probabilidad_Renuncia'] = probabilidad_renuncia
 
-    # 2. Hoja para ingresar datos manuales
-    st.header("Hoja 2: Ingresar datos manualmente para predicción")
-    with st.form("manual_form"):
-        manual_data = {}
-        for col in model_feature_columns:
-            if col == 'Edad':
-                manual_data[col] = st.number_input(f"{col}", min_value=18, max_value=100, value=30)
-            elif col == 'IngresoMensual':
-                manual_data[col] = st.number_input(f"{col}", min_value=0, max_value=100000, value=30000)
+            # Evaluación de métricas (Accuracy)
+            if 'Attrition' in df_original.columns:
+                true_labels_uploaded = df_original['Attrition'].replace({'Yes': 1, 'No': 0}).astype(int)
+                acc = evaluate_metrics(true_labels_uploaded, predictions)
+                st.success("✅ Predicción completada!")
+                st.metric(label="Accuracy", value=f"{acc:.4f}")
+
             else:
-                manual_data[col] = st.text_input(f"{col}")
+                st.warning("⚠️ El archivo cargado no tiene la columna 'Attrition'. Solo se muestran las predicciones.")
+            
+            # Recomendaciones
+            display_recommendations(df_original)
 
-        submit_button = st.form_submit_button("🚀 Predecir (Ingresar manualmente)")
+            # Botón de descarga
+            st.download_button(
+                label="⬇️ Descargar Resultados de Predicción (Excel)",
+                data=export_results_to_excel(df_original),
+                file_name="predicciones_resultados.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            )
 
-        if submit_button:
-            # Convertir los datos manuales en un DataFrame para preprocesamiento
-            df_manual = pd.DataFrame([manual_data])
-            processed_manual_data = preprocess_data(df_manual, model_feature_columns, categorical_mapping, scaler)
+# ============================
+#  Funciones de Recomendaciones
+# ============================
+def display_recommendations(df_results):
+    st.markdown("---")
+    st.header("💡 Recomendaciones Estratégicas")
 
-            if processed_manual_data is not None:
-                probabilidad_renuncia, predictions = predict(model, processed_manual_data)
-                st.success("✅ Predicción Manual Completa!")
-                st.write(f"Probabilidad de renuncia: {probabilidad_renuncia[0]:.2f}")
-                st.write(f"Predicción: {'Renunciará' if predictions[0] == 1 else 'No Renunciará'}")
-            else:
-                st.error("Error en el preprocesamiento de los datos manuales.")
+    # Identificar el umbral de alto riesgo (ej. Probabilidad > 70%)
+    high_risk_threshold = 0.70
+    df_high_risk = df_results[df_results['Probabilidad_Renuncia'] > high_risk_threshold]
+    
+    if df_high_risk.empty:
+        st.success("El riesgo de deserción es bajo. Mantenga las políticas actuales.")
+        return
 
+    # 1. Recomendación a Nivel Individual (Intervención)
+    top_risk_count = min(10, len(df_high_risk))
+    st.subheader("1. Intervención Individual Prioritaria")
+    st.markdown(f"**Enfocarse en los {top_risk_count} empleados con la más alta probabilidad de renuncia** (Probabilidad > {high_risk_threshold * 100:.0f}%).")
+    st.info("Acción sugerida: Realizar entrevistas de retención confidenciales para entender sus preocupaciones y ofrecer soluciones personalizadas.")
 
+    # 2. Recomendación a Nivel Departamental (Foco)
+    if 'Department' in df_high_risk.columns:
+        st.subheader("2. Foco Departamental")
+        risk_by_dept = df_high_risk.groupby('Department').size().sort_values(ascending=False)
+        top_risk_dept = risk_by_dept.index[0]
+        st.markdown(f"El departamento de **{top_risk_dept}** concentra el mayor número de empleados en alto riesgo.")
+        st.warning(f"Acción sugerida: Evaluar la carga de trabajo, la gestión de líderes y los niveles de satisfacción general del equipo en **{top_risk_dept}**.")
+
+    # 3. Recomendación a Nivel Global/Estratégico (Prevención)
+    st.subheader("3. Estrategia Global de Prevención")
+    if 'MonthlyIncome' in df_high_risk.columns:
+        avg_high_risk_income = df_high_risk['MonthlyIncome'].mean()
+        avg_total_income = df_results['MonthlyIncome'].mean()
+        
+        if avg_high_risk_income < avg_total_income * 0.9:
+            st.markdown("Se observa una correlación entre el bajo **MonthlyIncome** y el alto riesgo de deserción.")
+            st.info("Acción sugerida: Revisar y ajustar la banda salarial para los roles de mayor riesgo.")
+
+# ============================
+#  Funciones de Exportación
+# ============================
+def export_results_to_excel(df, filename="predicciones_resultados.xlsx"):
+    # Exportar resultados a Excel
+    with pd.ExcelWriter(filename, engine='xlsxwriter') as output:
+        df.to_excel(output, sheet_name='Predicciones', index=False)
+        
+    return filename
+
+# ============================
+#  Inicio de la Aplicación
+# ============================
 if __name__ == "__main__":
     main()
-
 
 
 

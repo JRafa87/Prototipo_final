@@ -3,6 +3,7 @@ import numpy as np
 import joblib
 import streamlit as st
 import plotly.express as px
+import os
 
 # ==========================
 # 1. Cargar modelo y artefactos
@@ -15,6 +16,7 @@ def load_model():
         scaler = joblib.load('models/scaler.pkl')
         df_reference = pd.read_csv('data/reference_data.csv')
         df_reference['Attrition'] = df_reference['Attrition'].replace({'Yes': 1, 'No': 0})
+        st.success("✅ Modelo y artefactos cargados correctamente.")
         return model, categorical_mapping, scaler, df_reference
     except Exception as e:
         st.error(f"Error al cargar modelo o artefactos: {e}")
@@ -125,6 +127,10 @@ def main():
     if "df_resultados" in st.session_state:
         df = st.session_state.df_resultados
 
+        # ==== ALERTA general ====
+        total_altos = (df["Probabilidad_Renuncia"] > 0.6).sum()
+        st.warning(f"⚠️ {total_altos} empleados presentan una probabilidad de renuncia superior al 60%.")
+
         # ==== Gráficos ====
         st.subheader("📊 Análisis general por departamento")
         col1, col2 = st.columns(2)
@@ -178,16 +184,42 @@ def main():
                 if st.button("👁️ Ver", key=f"ver_{i}"):
                     st.session_state.selected_emp = i
 
-        # ==== Modal "nativo" ====
+        # ==== MODAL flotante ====
         if st.session_state.get("selected_emp") is not None:
             empleado = df_top10.loc[st.session_state.selected_emp]
-            st.markdown("---")
-            with st.container(border=True):
-                st.subheader(f"💬 Recomendaciones para el empleado {empleado['EmployeeNumber']}")
-                st.info(empleado["Recomendacion"])
-                if st.button("❌ Cerrar"):
-                    st.session_state.selected_emp = None
-                    st.rerun()
+
+            st.markdown(
+                f"""
+                <style>
+                    .modal-background {{
+                        position: fixed;
+                        top: 0; left: 0; width: 100%; height: 100%;
+                        background-color: rgba(0, 0, 0, 0.5);
+                        display: flex; justify-content: center; align-items: center;
+                        z-index: 1000;
+                    }}
+                    .modal-content {{
+                        background-color: white;
+                        padding: 30px;
+                        border-radius: 12px;
+                        width: 60%;
+                        max-width: 700px;
+                        box-shadow: 0 4px 25px rgba(0,0,0,0.3);
+                    }}
+                </style>
+                <div class="modal-background">
+                    <div class="modal-content">
+                        <h4>💬 Recomendaciones para el empleado {empleado['EmployeeNumber']}</h4>
+                        <p style='font-size:15px; text-align:justify;'>{empleado["Recomendacion"]}</p>
+                    </div>
+                </div>
+                """,
+                unsafe_allow_html=True
+            )
+
+            if st.button("❌ Cerrar ventana"):
+                st.session_state.selected_emp = None
+                st.rerun()
 
         # ==== DESCARGA ====
         st.subheader("📥 Descargar resultados")
@@ -206,6 +238,7 @@ def main():
 # ============================
 if __name__ == "__main__":
     main()
+
 
 
 
